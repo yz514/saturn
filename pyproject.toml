@@ -1,0 +1,28 @@
+[project]
+name = "saturn"
+version = "0.0.1"
+description = "AI-native autonomous equity research platform."
+requires-python = ">=3.11"
+dependencies = [
+    "yfinance>=0.2.40",
+    "anthropic>=0.40.0",
+    "typer>=0.12.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+saturn = "saturn.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["saturn*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
