@@ -15,6 +15,10 @@ class IngestionError(RuntimeError):
 
 
 def _mock_company(ticker: str) -> CompanyData:
+    # Phase 0 fixture: always NVIDIA-shaped data, with only the ticker string
+    # echoed back. A report for another ticker will show NVIDIA figures — this
+    # is intentional offline sample data, replaced by real per-ticker ingestion
+    # in later phases.
     return CompanyData(
         ticker=ticker,
         name="NVIDIA Corporation",
