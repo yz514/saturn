@@ -48,7 +48,7 @@ def research(
             )
             raise typer.Exit(1)
         model_used = model or settings.default_model
-        llm = AnthropicClient(settings.anthropic_api_key, settings.default_model)
+        llm = AnthropicClient(settings.anthropic_api_key, model_used)
 
     try:
         company = fetch_company_data(ticker, mock=mock)
