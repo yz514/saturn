@@ -56,7 +56,9 @@ def test_build_dossier_records_gap_when_quote_fails():
 
 
 def test_build_dossier_default_edgar_is_wired():
-    from saturn.ingestion.edgar import fetch_edgar  # noqa: F401 (used to assert default)
+    from saturn.ingestion.edgar import fetch_edgar
+    # The default edgar_fn IS the real fetch_edgar (verifies the wiring, not just the merge).
+    assert build_dossier.__kwdefaults__["edgar_fn"] is fetch_edgar
     from saturn.models import Fundamentals, FinancialFact, Provenance, Quote
 
     def fake_edgar(ticker):
