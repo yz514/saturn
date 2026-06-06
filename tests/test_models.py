@@ -1,50 +1,57 @@
 from datetime import date
 
 from saturn.models import (
-    AnalysisSections,
-    CompanyData,
-    DebateSections,
-    NewsItem,
-    ResearchReport,
+    CompanyDossier,
+    FinancialFact,
+    Fundamentals,
+    Provenance,
+    Quote,
+    SourceGap,
 )
 
 
-def test_company_data_minimal_defaults():
-    c = CompanyData(ticker="NVDA", name="NVIDIA", as_of=date(2026, 5, 25))
-    assert c.ticker == "NVDA"
-    assert c.segments == []
-    assert c.metrics == {}
-    assert c.news == []
+def test_provenance_defaults_optional():
+    p = Provenance(source="FRED")
+    assert p.source == "FRED"
+    assert p.source_url is None and p.as_of is None and p.retrieved_at is None
 
 
-def test_research_report_composes_sections():
-    company = CompanyData(ticker="NVDA", name="NVIDIA", as_of=date(2026, 5, 25))
-    analysis = AnalysisSections(
-        executive_summary="ES",
-        company_overview="CO",
-        business_segments="BS",
-        financial_snapshot="FS",
-        valuation_discussion="VD",
-        key_risks="KR",
-        open_questions="OQ",
+def test_financial_fact_carries_provenance():
+    fact = FinancialFact(
+        concept="Revenues",
+        value=1000.0,
+        unit="USD",
+        fiscal_period="FY2024",
+        provenance=Provenance(source="SEC EDGAR", as_of=date(2025, 2, 1)),
     )
-    debate = DebateSections(bull_thesis="BULL", bear_thesis="BEAR", final_view="FV")
-    report = ResearchReport(
+    assert fact.provenance.source == "SEC EDGAR"
+
+
+def test_dossier_minimal_construction():
+    d = CompanyDossier(
         ticker="NVDA",
-        company=company,
-        analysis=analysis,
-        debate=debate,
-        generated_at=date(2026, 5, 25),
-        model_used="mock",
-        mock=True,
-        sources=["s1"],
+        name="NVIDIA Corporation",
+        generated_at=date(2026, 6, 6),
     )
-    assert report.analysis.key_risks == "KR"
-    assert report.debate.final_view == "FV"
-    assert report.mock is True
+    assert d.quote is None
+    assert d.fundamentals is None
+    assert d.filing_sections == []
+    assert d.gaps == []
 
 
-def test_news_item_optional_fields():
-    n = NewsItem(title="Headline")
-    assert n.title == "Headline"
-    assert n.link is None
+def test_dossier_with_quote_and_facts():
+    d = CompanyDossier(
+        ticker="NVDA",
+        name="NVIDIA Corporation",
+        quote=Quote(price=900.0, currency="USD", provenance=Provenance(source="yfinance")),
+        fundamentals=Fundamentals(
+            facts=[
+                FinancialFact(concept="Revenues", value=60.0, provenance=Provenance(source="SEC EDGAR"))
+            ]
+        ),
+        gaps=[SourceGap(source="FRED", reason="not configured")],
+        generated_at=date(2026, 6, 6),
+    )
+    assert d.quote.price == 900.0
+    assert d.fundamentals.facts[0].concept == "Revenues"
+    assert d.gaps[0].source == "FRED"

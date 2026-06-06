@@ -21,3 +21,19 @@ def test_settings_reads_env(monkeypatch):
 def test_get_settings_returns_settings(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
     assert get_settings().anthropic_api_key == "k"
+
+
+def test_new_keys_default_none(monkeypatch):
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    monkeypatch.delenv("SEC_USER_AGENT", raising=False)
+    s = get_settings()
+    assert s.fred_api_key is None
+    assert s.sec_user_agent is None
+
+
+def test_new_keys_read_from_env(monkeypatch):
+    monkeypatch.setenv("FRED_API_KEY", "abc123")
+    monkeypatch.setenv("SEC_USER_AGENT", "Saturn test@example.com")
+    s = get_settings()
+    assert s.fred_api_key == "abc123"
+    assert s.sec_user_agent == "Saturn test@example.com"

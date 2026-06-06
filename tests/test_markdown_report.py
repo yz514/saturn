@@ -1,26 +1,15 @@
-from datetime import date
-
+from saturn.ingestion.dossier import _mock_dossier
 from saturn.models import (
     AnalysisSections,
-    CompanyData,
     DebateSections,
-    NewsItem,
     ResearchReport,
 )
 from saturn.reports.markdown_report import render
+from datetime import date
 
 
 def _sample_report() -> ResearchReport:
-    company = CompanyData(
-        ticker="NVDA",
-        name="NVIDIA",
-        as_of=date(2026, 5, 25),
-        price=900.0,
-        currency="USD",
-        market_cap=2_200_000_000_000,
-        metrics={"trailing_pe": 65.0},
-        news=[NewsItem(title="N1", link="https://x", publisher="P")],
-    )
+    company = _mock_dossier("NVDA")
     analysis = AnalysisSections(
         executive_summary="ES",
         company_overview="CO",
@@ -43,7 +32,7 @@ def _sample_report() -> ResearchReport:
     )
 
 
-def test_render_has_all_thirteen_sections():
+def test_render_has_all_sections():
     md = render(_sample_report())
     expected = [
         "# NVDA Equity Research Report",
@@ -59,15 +48,37 @@ def test_render_has_all_thirteen_sections():
         "## 10. Valuation Discussion",
         "## 11. Open Questions",
         "## 12. Final View",
-        "## 13. Sources",
+        "## 13. Macro Snapshot",
+        "## 14. Sources",
     ]
     for header in expected:
         assert header in md, f"missing: {header}"
+
+
+def test_render_includes_quote_and_financials_table():
+    md = render(_sample_report())
+    assert "# NVDA Equity Research Report" in md
+    assert "$900" in md  # quote price humanized
+    assert "Revenues" in md  # fundamentals table
+    assert "FY2024" in md
+    assert "Federal Funds Effective Rate" in md  # macro snapshot
+    assert "_Source: yfinance (mock)_" in md  # quote source line
+    assert "| Concept | Period | Value | Unit | Source |" in md  # 5-col table header
 
 
 def test_render_includes_disclaimer_and_content():
     md = render(_sample_report())
     assert "not investment advice" in md
     assert "BULL" in md and "BEAR" in md
-    assert "[N1](https://x)" in md
+    assert "[MOCK] NVIDIA announces next-gen architecture" in md
     assert "MOCK DATA" in md
+
+
+def test_render_shows_data_gaps_section():
+    from saturn.models import SourceGap
+
+    report = _sample_report()
+    report.company.gaps = [SourceGap(source="edgar", reason="edgar adapter not configured")]
+    md = render(report)
+    assert "## 15. Data Gaps" in md
+    assert "**edgar**: edgar adapter not configured" in md
