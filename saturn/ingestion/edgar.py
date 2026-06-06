@@ -7,7 +7,9 @@ Thin urllib fetchers (added in later tasks) handle the live path.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date
+from html import unescape
 
 from saturn.models import FinancialFact, Fundamentals, Provenance
 
@@ -124,3 +126,50 @@ def _parse_companyfacts(raw: dict, *, max_years: int = 4) -> Fundamentals:
                 )
             )
     return Fundamentals(facts=facts)
+
+
+# (name, start-marker regex, list of end-marker regexes) for targeted 10-K items.
+_SECTION_SPECS = [
+    ("Business", r"item\s*1\.?\s+business", [r"item\s*1a\b"]),
+    ("Risk Factors", r"item\s*1a\b", [r"item\s*1b\b", r"item\s*2\b"]),
+    (
+        "Management Discussion & Analysis",
+        r"item\s*7\.?\s+management",
+        [r"item\s*7a\b", r"item\s*8\b"],
+    ),
+]
+
+
+def _strip_html(html: str) -> str:
+    """Crudely convert HTML to plain text: drop tags, unescape entities, collapse WS."""
+    no_tags = re.sub(r"<[^>]+>", " ", html)
+    text = unescape(no_tags)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _section_between(text: str, start_pat: str, end_pats: list[str]) -> str | None:
+    """Return the longest span starting at a `start_pat` match and ending at the
+    nearest following `end_pats` match. Longest-span-wins skips TOC entries."""
+    best = ""
+    for m in re.finditer(start_pat, text, flags=re.IGNORECASE):
+        start = m.start()
+        end = len(text)
+        for ep in end_pats:
+            em = re.search(ep, text[m.end():], flags=re.IGNORECASE)
+            if em:
+                end = min(end, m.end() + em.start())
+        span = text[start:end].strip()
+        if len(span) > len(best):
+            best = span
+    return best or None
+
+
+def _extract_filing_sections(html: str) -> list[dict]:
+    """Return [{"name", "text"}] for the targeted 10-K items found in `html`."""
+    text = _strip_html(html)
+    out: list[dict] = []
+    for name, start_pat, end_pats in _SECTION_SPECS:
+        body = _section_between(text, start_pat, end_pats)
+        if body:
+            out.append({"name": name, "text": body})
+    return out

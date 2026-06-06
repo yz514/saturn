@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from saturn.ingestion.edgar import _parse_companyfacts, _select_latest_10k
+from saturn.ingestion.edgar import _extract_filing_sections, _parse_companyfacts, _select_latest_10k, _strip_html
 from saturn.models import Fundamentals
 
 FIX = Path(__file__).parent.parent / "fixtures" / "edgar"
@@ -66,3 +66,30 @@ def test_select_latest_10k_picks_most_recent_annual():
 def test_select_latest_10k_returns_none_when_absent():
     empty = {"filings": {"recent": {"accessionNumber": [], "form": [], "filingDate": [], "primaryDocument": []}}}
     assert _select_latest_10k(empty) is None
+
+
+def _tenk_html():
+    return (FIX / "tenk_excerpt.html").read_text(encoding="utf-8")
+
+
+def test_strip_html_removes_tags_and_unescapes():
+    text = _strip_html("<p>A &amp; B</p><p>C</p>")
+    assert "A & B" in text
+    assert "<" not in text
+
+
+def test_extract_sections_returns_named_bodies():
+    sections = _extract_filing_sections(_tenk_html())
+    names = {s["name"] for s in sections}
+    assert {"Business", "Risk Factors", "Management Discussion & Analysis"} <= names
+
+
+def test_extracted_risk_factors_has_real_body_not_toc_link():
+    sections = _extract_filing_sections(_tenk_html())
+    rf = next(s for s in sections if s["name"] == "Risk Factors")
+    assert "Demand for our products" in rf["text"]
+    assert len(rf["text"]) > 40
+
+
+def test_extract_sections_empty_when_no_items():
+    assert _extract_filing_sections("<html><body><p>nothing here</p></body></html>") == []
