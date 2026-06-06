@@ -1,11 +1,12 @@
 # Saturn Roadmap
 
-## Phase 0 — Foundation & MVP (current)
+## Phase 0 — Foundation & MVP ✅ complete (PR #1, 2026-05-26)
 Local, human-triggered `saturn research <TICKER>` producing a 13-section
 markdown report. Sequential pipeline: ingest → analyze → debate → render.
 Real yfinance data + LLM, with an offline `--mock` fallback.
+See `docs/PROGRESS.md` for the completion record and open follow-ups.
 
-## Phase 1 — Multi-Agent Research Workflow
+## Phase 1 — Multi-Agent Research Workflow (next)
 Split analyze/debate into specialized agents and adopt explicit graph
 orchestration (LangGraph). Planned agent roster (deferred from Phase 0):
 Planner, Research, Financial Analyst, Macro, Industry, Bull, Bear, Critic,
