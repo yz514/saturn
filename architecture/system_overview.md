@@ -4,7 +4,7 @@
 
 ```text
 saturn research <TICKER> [--mock]
-  ingestion.fetch_company_data  -> CompanyData
+  ingestion.build_dossier  -> CompanyDossier
   workflows.run
     analyze (LLM call 1) -> AnalysisSections
     debate  (LLM call 2) -> DebateSections

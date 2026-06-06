@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from saturn.ingestion.cache import read_cache, write_cache
 
 
@@ -32,9 +34,6 @@ def test_fresh_entry_within_ttl_hits(tmp_path):
         "fred", "MACRO", ttl_days=1, root=tmp_path, today=date(2026, 6, 6)
     )
     assert got == {"x": 1}
-
-
-import pytest
 
 
 def test_freshest_in_window_wins(tmp_path):

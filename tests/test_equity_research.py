@@ -23,3 +23,13 @@ def test_run_accepts_dossier_and_builds_report():
     assert report.company.quote.price == 900.0
     assert report.analysis.executive_summary
     assert report.debate.bull_thesis
+
+
+def test_company_context_renders_gaps_block():
+    from saturn.models import SourceGap
+
+    dossier = _mock_dossier("NVDA")
+    dossier.gaps = [SourceGap(source="fred", reason="fred adapter not configured")]
+    ctx = _company_context(dossier)
+    assert "DATA GAPS" in ctx
+    assert "fred: fred adapter not configured" in ctx

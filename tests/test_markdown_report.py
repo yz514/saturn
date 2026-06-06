@@ -72,3 +72,13 @@ def test_render_includes_disclaimer_and_content():
     assert "BULL" in md and "BEAR" in md
     assert "[MOCK] NVIDIA announces next-gen architecture" in md
     assert "MOCK DATA" in md
+
+
+def test_render_shows_data_gaps_section():
+    from saturn.models import SourceGap
+
+    report = _sample_report()
+    report.company.gaps = [SourceGap(source="edgar", reason="edgar adapter not configured")]
+    md = render(report)
+    assert "## 15. Data Gaps" in md
+    assert "**edgar**: edgar adapter not configured" in md
