@@ -6,12 +6,9 @@ import logging
 from datetime import date
 
 from saturn.models import CompanyData, NewsItem
+from saturn.ingestion.errors import IngestionError
 
 logger = logging.getLogger(__name__)
-
-
-class IngestionError(RuntimeError):
-    """Raised when company data cannot be fetched."""
 
 
 def _mock_company(ticker: str) -> CompanyData:
