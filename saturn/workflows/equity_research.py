@@ -51,13 +51,13 @@ def _company_context(dossier: CompanyDossier) -> str:
 
     if dossier.fundamentals and dossier.fundamentals.facts:
         lines.append("\nFUNDAMENTALS (as-reported):")
-        for f in dossier.fundamentals.facts:
-            cite = f.provenance.source
-            if f.provenance.as_of:
-                cite += f", as of {f.provenance.as_of}"
-            period = f.fiscal_period or "?"
+        for fact in dossier.fundamentals.facts:
+            cite = fact.provenance.source
+            if fact.provenance.as_of:
+                cite += f", as of {fact.provenance.as_of}"
+            period = fact.fiscal_period or "?"
             lines.append(
-                f"- {f.concept} {period}: {f.value} {f.unit or ''} (source: {cite})"
+                f"- {fact.concept} {period}: {fact.value} {fact.unit or ''} (source: {cite})"
             )
 
     if dossier.filing_sections:
@@ -75,7 +75,10 @@ def _company_context(dossier: CompanyDossier) -> str:
     if dossier.news:
         lines.append("\nNEWS:")
         for n in dossier.news:
-            lines.append(f"- {n.title}" + (f" — {n.publisher}" if n.publisher else ""))
+            line = f"- {n.title}" + (f" — {n.publisher}" if n.publisher else "")
+            if n.link:
+                line += f" (source: {n.link})"
+            lines.append(line)
 
     if dossier.gaps:
         lines.append("\nDATA GAPS (sources unavailable this run):")
@@ -103,7 +106,7 @@ def analyze(
 ) -> AnalysisSections:
     prompt = (
         "OUTPUT_SCHEMA=analysis\n"
-        f"Company data (JSON):\n{_company_context(company)}\n\n"
+        f"Company data:\n{_company_context(company)}\n\n"
         "Return ONLY a JSON object with these string keys: "
         "executive_summary, company_overview, business_segments, "
         "financial_snapshot, valuation_discussion, key_risks, open_questions."
@@ -118,7 +121,7 @@ def debate(
 ) -> DebateSections:
     prompt = (
         "OUTPUT_SCHEMA=debate\n"
-        f"Company data (JSON):\n{_company_context(company)}\n\n"
+        f"Company data:\n{_company_context(company)}\n\n"
         "Return ONLY a JSON object with these string keys: "
         "bull_thesis, bear_thesis, final_view."
     )

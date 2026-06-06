@@ -19,6 +19,7 @@ def test_run_accepts_dossier_and_builds_report():
     dossier = _mock_dossier("NVDA")
     report = run(dossier, MockLLMClient(), model_used="mock", mock=True)
     assert report.ticker == "NVDA"
+    assert report.company is dossier
     assert report.company.quote.price == 900.0
     assert report.analysis.executive_summary
     assert report.debate.bull_thesis
