@@ -53,3 +53,30 @@ def test_build_dossier_records_gap_when_quote_fails():
     )
     assert d.quote is None
     assert "quote" in {g.source for g in d.gaps}
+
+
+def test_build_dossier_default_edgar_is_wired():
+    from saturn.ingestion.edgar import fetch_edgar  # noqa: F401 (used to assert default)
+    from saturn.models import Fundamentals, FinancialFact, Provenance, Quote
+
+    def fake_edgar(ticker):
+        return {
+            "fundamentals": Fundamentals(
+                facts=[FinancialFact(concept="Revenues", value=1.0, provenance=Provenance(source="SEC EDGAR"))]
+            ),
+            "filing_sections": [],
+            "name": "NVIDIA CORP",
+            "cik": "0001045810",
+        }
+
+    d = build_dossier(
+        "NVDA",
+        mock=False,
+        quote_fn=lambda t, *, mock: Quote(price=1.0, provenance=Provenance(source="yfinance")),
+        edgar_fn=fake_edgar,
+        fred_fn=None,
+    )
+    assert d.name == "NVIDIA CORP"        # merged from edgar result
+    assert d.cik == "0001045810"
+    assert d.fundamentals.facts[0].concept == "Revenues"
+    assert "fred" in {g.source for g in d.gaps}  # fred still unwired here
