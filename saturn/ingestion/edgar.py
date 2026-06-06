@@ -215,7 +215,7 @@ def _cache_full_text(cik: str, name: str, text: str) -> str:
     return str(path)
 
 
-def fetch_edgar(ticker: str, *, mock: bool = False) -> dict:
+def fetch_edgar(ticker: str) -> dict:
     """Return {"fundamentals", "filing_sections", "name", "cik"} for `ticker`.
 
     Raises DataUnavailable if the ticker has no CIK or SEC_USER_AGENT is unset;

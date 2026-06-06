@@ -1,8 +1,14 @@
 import json
 from pathlib import Path
 
-from saturn.ingestion.edgar import _extract_filing_sections, _parse_companyfacts, _select_latest_10k, _strip_html
-from saturn.models import Fundamentals
+from saturn.ingestion.edgar import (
+    _extract_filing_sections,
+    _parse_companyfacts,
+    _select_latest_10k,
+    _strip_html,
+    fetch_edgar,
+)
+from saturn.models import FilingSection, Fundamentals
 
 FIX = Path(__file__).parent.parent / "fixtures" / "edgar"
 
@@ -102,10 +108,6 @@ def test_strip_html_drops_script_and_style_content():
     assert "var a" not in text
 
 
-from saturn.ingestion.edgar import fetch_edgar
-from saturn.models import FilingSection
-
-
 def test_fetch_edgar_assembles_dossier_dict(monkeypatch):
     cf = _companyfacts()
     sub = _submissions()
@@ -139,3 +141,13 @@ def test_fetch_edgar_unknown_ticker_propagates_data_unavailable(monkeypatch):
     monkeypatch.setattr("saturn.ingestion.edgar.ticker_to_cik", no_cik)
     with pytest.raises(DataUnavailable):
         fetch_edgar("ZZZZ")
+
+
+def test_ua_requires_sec_user_agent():
+    import pytest
+    from saturn.ingestion.edgar import _ua
+    from saturn.ingestion.errors import DataUnavailable
+
+    # The autouse offline fixture drops SEC_USER_AGENT, so _ua() must raise.
+    with pytest.raises(DataUnavailable):
+        _ua()
