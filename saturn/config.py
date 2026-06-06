@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     anthropic_api_key: str | None = None
+    fred_api_key: str | None = None
+    sec_user_agent: str | None = None
     default_model: str = "claude-sonnet-4-6"
     reports_dir: Path = Path("reports")
     log_level: str = "INFO"

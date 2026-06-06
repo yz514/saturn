@@ -15,6 +15,8 @@ from saturn.config import Settings
 
 @pytest.fixture(autouse=True)
 def offline_settings(monkeypatch):
-    # Ignore any real .env file during tests, and drop a shell-exported key.
+    # Ignore any real .env file during tests, and drop shell-exported keys.
     monkeypatch.setitem(Settings.model_config, "env_file", None)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    monkeypatch.delenv("SEC_USER_AGENT", raising=False)
