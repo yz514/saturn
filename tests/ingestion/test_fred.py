@@ -13,8 +13,9 @@ def _raw():
 
 def test_parse_skips_missing_values_and_sorts_ascending():
     obs = _parse_observations(_raw())
-    # the "." value on 2026-02-01 is dropped
-    assert (date(2026, 2, 1), 0.0) not in obs
+    # the "." value on 2026-02-01 is dropped entirely
+    assert not any(d == date(2026, 2, 1) for d, _ in obs)
+    assert len(obs) == 3  # 4 input rows minus the one "." row
     assert obs == sorted(obs, key=lambda t: t[0])
     assert obs[-1] == (date(2026, 4, 1), 4.25)
 
@@ -29,3 +30,8 @@ def test_parse_returns_date_float_tuples():
 def test_registry_includes_core_series():
     ids = {s[0] for s in FRED_SERIES}
     assert {"FEDFUNDS", "CPIAUCSL", "DGS10", "DGS2", "UNRATE", "M2SL"} <= ids
+
+
+def test_parse_handles_empty_and_missing_observations():
+    assert _parse_observations({"observations": []}) == []
+    assert _parse_observations({}) == []
