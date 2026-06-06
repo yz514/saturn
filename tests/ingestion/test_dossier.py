@@ -40,3 +40,16 @@ def test_build_dossier_real_path_quote_only_records_gaps():
     assert d.fundamentals is None
     gap_sources = {g.source for g in d.gaps}
     assert "edgar" in gap_sources and "fred" in gap_sources
+
+
+def test_build_dossier_records_gap_when_quote_fails():
+    from saturn.ingestion.errors import SourceFailure
+
+    def failing_quote(ticker, *, mock):
+        raise SourceFailure("yahoo down")
+
+    d = build_dossier(
+        "NVDA", mock=False, quote_fn=failing_quote, edgar_fn=None, fred_fn=None
+    )
+    assert d.quote is None
+    assert "quote" in {g.source for g in d.gaps}

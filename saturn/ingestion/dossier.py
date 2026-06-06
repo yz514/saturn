@@ -87,8 +87,15 @@ def build_dossier(
 ) -> CompanyDossier:
     """Build a CompanyDossier. mock=True returns the offline fixture.
 
+    Adapter contracts:
+    - quote_fn(ticker, *, mock) -> Quote
+    - edgar_fn(ticker) -> dict with keys "fundamentals" (Fundamentals) and
+      "filing_sections" (list[FilingSection])
+    - fred_fn(ticker) -> MacroSnapshot
+
     edgar_fn/fred_fn are injected by later plans; when None, the dispatcher
-    records a gap for that source.
+    records a gap for that source. Any adapter that raises is recorded as a
+    gap rather than crashing the build.
     """
     if mock:
         logger.info("dossier(mock): %s", ticker)
@@ -123,6 +130,12 @@ def build_dossier(
     if isinstance(edgar_result, dict):
         fundamentals = edgar_result.get("fundamentals")
         filing_sections = edgar_result.get("filing_sections")
+    elif edgar_result is not None:
+        logger.warning(
+            "edgar adapter returned %s, expected dict with "
+            "'fundamentals'/'filing_sections' keys; ignoring",
+            type(edgar_result).__name__,
+        )
 
     return CompanyDossier(
         ticker=ticker,
