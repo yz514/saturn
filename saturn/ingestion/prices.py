@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from saturn.models import CompanyData, NewsItem
-from saturn.ingestion.errors import IngestionError
+from saturn.models import CompanyData, NewsItem, Provenance, Quote
+from saturn.ingestion.errors import IngestionError, SourceFailure
 
 logger = logging.getLogger(__name__)
 
@@ -114,4 +114,39 @@ def fetch_company_data(ticker: str, *, mock: bool = False) -> CompanyData:
         },
         news=_extract_news(raw_news),
         as_of=date.today(),
+    )
+
+
+def _mock_quote(ticker: str) -> Quote:
+    return Quote(
+        price=900.0,
+        market_cap=2_200_000_000_000.0,
+        currency="USD",
+        provenance=Provenance(source="yfinance (mock)", as_of=date.today()),
+    )
+
+
+def fetch_quote(ticker: str, *, mock: bool = False) -> Quote:
+    """Return a canonical Quote for `ticker`. mock=True for offline fixture."""
+    if mock:
+        logger.info("quote(mock): %s", ticker)
+        return _mock_quote(ticker)
+
+    logger.info("quote(yfinance): %s", ticker)
+    try:
+        import yfinance as yf
+
+        info = (yf.Ticker(ticker).info) or {}
+    except Exception as exc:  # noqa: BLE001 - surface as a typed error
+        raise SourceFailure(f"yfinance quote failed for {ticker}") from exc
+
+    return Quote(
+        price=info.get("currentPrice") or info.get("regularMarketPrice"),
+        market_cap=info.get("marketCap"),
+        currency=info.get("currency"),
+        provenance=Provenance(
+            source="yfinance",
+            source_url=f"https://finance.yahoo.com/quote/{ticker}",
+            retrieved_at=date.today(),
+        ),
     )
