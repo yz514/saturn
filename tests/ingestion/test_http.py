@@ -36,3 +36,16 @@ def test_http_get_returns_body_and_sets_user_agent(monkeypatch):
     assert body == b'{"ok": 1}'
     assert captured["ua"] == "Saturn test@example.com"
     assert captured["url"] == "https://example.com/x"
+
+
+def test_http_get_redacts_api_key_in_error(monkeypatch):
+    def boom(req, timeout):
+        raise OSError("down")
+
+    monkeypatch.setattr(http.request, "urlopen", boom)
+    url = "https://api.example.com/x?series_id=A&api_key=SECRET123&file_type=json"
+    with pytest.raises(SourceFailure) as info:
+        http.http_get(url, user_agent="UA")
+    msg = str(info.value)
+    assert "SECRET123" not in msg
+    assert "api_key=***" in msg
