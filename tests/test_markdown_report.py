@@ -1,26 +1,15 @@
-from datetime import date
-
+from saturn.ingestion.dossier import _mock_dossier
 from saturn.models import (
     AnalysisSections,
-    CompanyData,
     DebateSections,
-    NewsItem,
     ResearchReport,
 )
 from saturn.reports.markdown_report import render
+from datetime import date
 
 
 def _sample_report() -> ResearchReport:
-    company = CompanyData(
-        ticker="NVDA",
-        name="NVIDIA",
-        as_of=date(2026, 5, 25),
-        price=900.0,
-        currency="USD",
-        market_cap=2_200_000_000_000,
-        metrics={"trailing_pe": 65.0},
-        news=[NewsItem(title="N1", link="https://x", publisher="P")],
-    )
+    company = _mock_dossier("NVDA")
     analysis = AnalysisSections(
         executive_summary="ES",
         company_overview="CO",
@@ -69,5 +58,5 @@ def test_render_includes_disclaimer_and_content():
     md = render(_sample_report())
     assert "not investment advice" in md
     assert "BULL" in md and "BEAR" in md
-    assert "[N1](https://x)" in md
+    assert "[MOCK] NVIDIA announces next-gen architecture" in md
     assert "MOCK DATA" in md

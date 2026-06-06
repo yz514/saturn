@@ -7,7 +7,8 @@ from datetime import date
 import typer
 
 from saturn.config import get_settings
-from saturn.ingestion.prices import IngestionError, fetch_company_data
+from saturn.ingestion.dossier import build_dossier
+from saturn.ingestion.prices import IngestionError
 from saturn.llm.anthropic_client import AnthropicClient
 from saturn.llm.mock_client import MockLLMClient
 from saturn.reports.markdown_report import render
@@ -51,7 +52,7 @@ def research(
         llm = AnthropicClient(settings.anthropic_api_key, model_used)
 
     try:
-        company = fetch_company_data(ticker, mock=mock)
+        company = build_dossier(ticker, mock=mock)
     except IngestionError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1)

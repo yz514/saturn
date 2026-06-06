@@ -35,16 +35,21 @@ def render(report: ResearchReport) -> str:
     out += ["## 3. Business Segments", "", a.business_segments, ""]
 
     out += ["## 4. Recent Market Performance", ""]
-    out.append(f"- Price: {_fmt_money(c.price)} {c.currency or ''}".rstrip())
-    out.append(f"- Market cap: {_fmt_money(c.market_cap)}")
+    if c.quote:
+        out.append(f"- Price: {_fmt_money(c.quote.price)} {c.quote.currency or ''}".rstrip())
+        out.append(f"- Market cap: {_fmt_money(c.quote.market_cap)}")
+    else:
+        out.append("- Price: N/A")
+        out.append("- Market cap: N/A")
     out.append("")
 
     out += ["## 5. Financial Snapshot", ""]
-    if c.metrics:
-        out.append("| Metric | Value |")
-        out.append("| --- | --- |")
-        for key, value in c.metrics.items():
-            out.append(f"| {key} | {value if value is not None else 'N/A'} |")
+    if c.fundamentals and c.fundamentals.facts:
+        out.append("| Concept | Period | Value |")
+        out.append("| --- | --- | --- |")
+        for fact in c.fundamentals.facts:
+            val = f"{fact.value:,.0f} {fact.unit or ''}".strip() if fact.value is not None else "N/A"
+            out.append(f"| {fact.concept} | {fact.fiscal_period or '?'} | {val} |")
         out.append("")
     out += [a.financial_snapshot, ""]
 
