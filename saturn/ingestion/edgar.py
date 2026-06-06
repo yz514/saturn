@@ -73,6 +73,8 @@ def _select_latest_10k(submissions: dict) -> dict | None:
     for i, form in enumerate(forms):
         if form != "10-K":
             continue
+        if i >= len(accns):
+            continue
         fdate = filed[i] if i < len(filed) else ""
         if best is None or fdate > best["filing_date"]:
             best = {
