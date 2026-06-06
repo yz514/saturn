@@ -32,8 +32,8 @@ def test_build_dossier_real_path_quote_only_records_gaps():
         "NVDA",
         mock=False,
         quote_fn=fake_quote,
-        edgar_fn=None,   # not wired yet
-        fred_fn=None,    # not wired yet
+        edgar_fn=None,   # explicitly None -> recorded as a gap
+        fred_fn=None,    # explicitly None -> recorded as a gap
         identity={"name": "NVIDIA Corporation"},
     )
     assert d.quote.price == 1.0
@@ -81,7 +81,7 @@ def test_build_dossier_default_edgar_is_wired():
     assert d.name == "NVIDIA CORP"        # merged from edgar result
     assert d.cik == "0001045810"
     assert d.fundamentals.facts[0].concept == "Revenues"
-    assert "fred" in {g.source for g in d.gaps}  # fred still unwired here
+    assert "fred" in {g.source for g in d.gaps}  # fred explicitly None here so it records a gap
 
 
 def test_build_dossier_default_fred_is_wired():
