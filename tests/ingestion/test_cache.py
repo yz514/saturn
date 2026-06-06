@@ -32,3 +32,25 @@ def test_fresh_entry_within_ttl_hits(tmp_path):
         "fred", "MACRO", ttl_days=1, root=tmp_path, today=date(2026, 6, 6)
     )
     assert got == {"x": 1}
+
+
+import pytest
+
+
+def test_freshest_in_window_wins(tmp_path):
+    write_cache("edgar", "NVDA", {"v": "old"}, root=tmp_path, today=date(2026, 6, 2))
+    write_cache("edgar", "NVDA", {"v": "new"}, root=tmp_path, today=date(2026, 6, 5))
+    got = read_cache("edgar", "NVDA", ttl_days=30, root=tmp_path, today=date(2026, 6, 6))
+    assert got == {"v": "new"}
+
+
+def test_future_dated_file_is_a_miss(tmp_path):
+    # Written "in the future" relative to the read date -> age < 0 -> miss.
+    write_cache("fred", "MACRO", {"x": 1}, root=tmp_path, today=date(2026, 6, 10))
+    got = read_cache("fred", "MACRO", ttl_days=30, root=tmp_path, today=date(2026, 6, 6))
+    assert got is None
+
+
+def test_negative_ttl_raises(tmp_path):
+    with pytest.raises(ValueError):
+        read_cache("fred", "MACRO", ttl_days=-1, root=tmp_path, today=date(2026, 6, 6))

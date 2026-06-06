@@ -48,6 +48,8 @@ def read_cache(
     today: date,
 ) -> object | None:
     """Return the freshest cached payload within TTL, or None on miss."""
+    if ttl_days < 0:
+        raise ValueError("ttl_days must be >= 0")
     d = _dir(source, root)
     if not d.exists():
         return None
