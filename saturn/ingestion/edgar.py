@@ -141,7 +141,9 @@ _SECTION_SPECS = [
 
 
 def _strip_html(html: str) -> str:
-    """Crudely convert HTML to plain text: drop tags, unescape entities, collapse WS."""
+    """Crudely convert HTML to plain text: drop script/style blocks and tags,
+    unescape entities, collapse whitespace."""
+    html = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", html, flags=re.IGNORECASE | re.DOTALL)
     no_tags = re.sub(r"<[^>]+>", " ", html)
     text = unescape(no_tags)
     return re.sub(r"\s+", " ", text).strip()
@@ -155,9 +157,9 @@ def _section_between(text: str, start_pat: str, end_pats: list[str]) -> str | No
         start = m.start()
         end = len(text)
         for ep in end_pats:
-            em = re.search(ep, text[m.end():], flags=re.IGNORECASE)
+            em = re.compile(ep, re.IGNORECASE).search(text, m.end())
             if em:
-                end = min(end, m.end() + em.start())
+                end = min(end, em.start())
         span = text[start:end].strip()
         if len(span) > len(best):
             best = span

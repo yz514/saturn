@@ -93,3 +93,10 @@ def test_extracted_risk_factors_has_real_body_not_toc_link():
 
 def test_extract_sections_empty_when_no_items():
     assert _extract_filing_sections("<html><body><p>nothing here</p></body></html>") == []
+
+
+def test_strip_html_drops_script_and_style_content():
+    text = _strip_html("<style>.x{color:red}</style><p>Hello</p><script>var a=1;</script>")
+    assert "Hello" in text
+    assert "color" not in text
+    assert "var a" not in text
