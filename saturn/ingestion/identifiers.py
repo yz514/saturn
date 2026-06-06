@@ -34,13 +34,14 @@ def _parse_company_tickers(raw: dict) -> dict[str, str]:
 
 
 def _default_fetch() -> dict:
-    """Live fetch of company_tickers.json, cached for 30 days."""
+    """Live fetch of company_tickers.json, cached per _TICKERS_TTL_DAYS."""
     settings = get_settings()
     cached = read_cache("edgar", "company_tickers", ttl_days=_TICKERS_TTL_DAYS, today=date.today())
     if cached is not None:
         return cached
-    ua = settings.sec_user_agent or "Saturn research@example.com"
-    raw = json.loads(http_get(_TICKERS_URL, user_agent=ua, accept="application/json"))
+    if not settings.sec_user_agent:
+        raise DataUnavailable("SEC_USER_AGENT not set; required for SEC EDGAR access")
+    raw = json.loads(http_get(_TICKERS_URL, user_agent=settings.sec_user_agent, accept="application/json"))
     write_cache("edgar", "company_tickers", raw, today=date.today())
     return raw
 

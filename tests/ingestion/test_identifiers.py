@@ -19,9 +19,9 @@ def test_parse_maps_ticker_to_padded_cik():
     assert mapping["AAPL"] == "0000320193"
 
 
-def test_parse_is_case_insensitive_on_ticker():
-    mapping = _parse_company_tickers(_raw())
-    assert "MSFT" in mapping
+def test_parse_normalizes_lowercase_source_ticker():
+    mapping = _parse_company_tickers({"0": {"cik_str": 789019, "ticker": "msft"}})
+    assert mapping["MSFT"] == "0000789019"
 
 
 def test_ticker_to_cik_uses_injected_fetcher():
