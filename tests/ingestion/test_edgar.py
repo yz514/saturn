@@ -49,3 +49,22 @@ def test_parse_empty_payload_returns_no_facts():
     from saturn.ingestion.edgar import _parse_companyfacts as parse
     assert parse({}).facts == []
     assert parse({"facts": {}}).facts == []
+
+
+from saturn.ingestion.edgar import _select_latest_10k
+
+
+def _submissions():
+    return json.loads((FIX / "submissions_NVDA.json").read_text(encoding="utf-8"))
+
+
+def test_select_latest_10k_picks_most_recent_annual():
+    sel = _select_latest_10k(_submissions())
+    assert sel["accession"] == "0001045810-24-000029"
+    assert sel["primary_document"] == "nvda-20240128.htm"
+    assert sel["filing_date"] == "2024-02-21"
+
+
+def test_select_latest_10k_returns_none_when_absent():
+    empty = {"filings": {"recent": {"accessionNumber": [], "form": [], "filingDate": [], "primaryDocument": []}}}
+    assert _select_latest_10k(empty) is None

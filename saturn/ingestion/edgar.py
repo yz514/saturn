@@ -33,6 +33,8 @@ EDGAR_CONCEPTS: dict[str, list[str]] = {
 }
 
 _COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+_ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik_int}/{accn_nodash}/{doc}"
 
 
 def _annual_usd_entries(tag_block: dict) -> dict[int, dict]:
@@ -55,6 +57,30 @@ def _annual_usd_entries(tag_block: dict) -> dict[int, dict]:
         prev = best.get(fy)
         if prev is None or str(row.get("filed", "")) > str(prev.get("filed", "")):
             best[fy] = row
+    return best
+
+
+def _select_latest_10k(submissions: dict) -> dict | None:
+    """Return {accession, primary_document, filing_date, report_date} for the most
+    recent 10-K in a submissions JSON, or None if there is no 10-K."""
+    recent = (submissions.get("filings", {}) or {}).get("recent", {})
+    forms = recent.get("form", [])
+    accns = recent.get("accessionNumber", [])
+    docs = recent.get("primaryDocument", [])
+    filed = recent.get("filingDate", [])
+    reported = recent.get("reportDate", [])
+    best: dict | None = None
+    for i, form in enumerate(forms):
+        if form != "10-K":
+            continue
+        fdate = filed[i] if i < len(filed) else ""
+        if best is None or fdate > best["filing_date"]:
+            best = {
+                "accession": accns[i],
+                "primary_document": docs[i] if i < len(docs) else "",
+                "filing_date": fdate,
+                "report_date": reported[i] if i < len(reported) else "",
+            }
     return best
 
 
