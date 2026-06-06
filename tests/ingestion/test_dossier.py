@@ -82,3 +82,35 @@ def test_build_dossier_default_edgar_is_wired():
     assert d.cik == "0001045810"
     assert d.fundamentals.facts[0].concept == "Revenues"
     assert "fred" in {g.source for g in d.gaps}  # fred still unwired here
+
+
+def test_build_dossier_default_fred_is_wired():
+    from saturn.ingestion.fred import fetch_fred
+    from saturn.models import MacroSnapshot, MacroSeries, Provenance, Quote
+    from datetime import date
+
+    # The default fred_fn IS the real fetch_fred (verifies the wiring itself).
+    assert build_dossier.__kwdefaults__["fred_fn"] is fetch_fred
+
+    def fake_fred(ticker):
+        return MacroSnapshot(
+            series=[
+                MacroSeries(
+                    series_id="FEDFUNDS",
+                    title="Federal Funds Effective Rate",
+                    observations=[(date(2026, 4, 1), 4.25)],
+                    provenance=Provenance(source="FRED"),
+                )
+            ]
+        )
+
+    d = build_dossier(
+        "NVDA",
+        mock=False,
+        quote_fn=lambda t, *, mock: Quote(price=1.0, provenance=Provenance(source="yfinance")),
+        edgar_fn=None,           # keep edgar a gap for this test
+        fred_fn=fake_fred,
+    )
+    assert d.macro is not None
+    assert d.macro.series[0].series_id == "FEDFUNDS"
+    assert "edgar" in {g.source for g in d.gaps}

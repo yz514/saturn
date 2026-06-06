@@ -15,6 +15,7 @@ from typing import Callable
 from saturn.ingestion.dispatch import route_to_source
 from saturn.ingestion.edgar import fetch_edgar
 from saturn.ingestion.errors import DataUnavailable
+from saturn.ingestion.fred import fetch_fred
 from saturn.ingestion.prices import fetch_quote
 from saturn.models import (
     CompanyDossier,
@@ -83,7 +84,7 @@ def build_dossier(
     mock: bool = False,
     quote_fn: Callable[..., Quote] = fetch_quote,
     edgar_fn: Callable[..., object] | None = fetch_edgar,
-    fred_fn: Callable[..., object] | None = None,
+    fred_fn: Callable[..., object] | None = fetch_fred,
     identity: dict | None = None,
 ) -> CompanyDossier:
     """Build a CompanyDossier. mock=True returns the offline fixture.
