@@ -6,9 +6,6 @@ error. The dispatcher uses the distinction to decide whether a missing source is
 a recorded gap (both cases here) versus something a caller might retry.
 """
 
-from __future__ import annotations
-
-
 class IngestionError(RuntimeError):
     """Base class for all ingestion failures."""
 
