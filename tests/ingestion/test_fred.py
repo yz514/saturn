@@ -2,7 +2,11 @@ import json
 from datetime import date
 from pathlib import Path
 
-from saturn.ingestion.fred import FRED_SERIES, _parse_observations
+import pytest
+
+from saturn.ingestion.errors import DataUnavailable
+from saturn.ingestion.fred import FRED_SERIES, _parse_observations, fetch_fred
+from saturn.models import MacroSnapshot
 
 FIX = Path(__file__).parent.parent / "fixtures" / "fred"
 
@@ -35,3 +39,30 @@ def test_registry_includes_core_series():
 def test_parse_handles_empty_and_missing_observations():
     assert _parse_observations({"observations": []}) == []
     assert _parse_observations({}) == []
+
+
+def test_fetch_fred_builds_snapshot_with_provenance(monkeypatch):
+    monkeypatch.setenv("FRED_API_KEY", "testkey")
+
+    def fake_fetch(series_id, api_key):
+        return {"observations": [{"date": "2026-04-01", "value": "1.5"}]}
+
+    snap = fetch_fred("NVDA", fetch=fake_fetch)
+    assert isinstance(snap, MacroSnapshot)
+    assert len(snap.series) == len(FRED_SERIES)
+    s0 = snap.series[0]
+    assert s0.observations[-1][1] == 1.5
+    assert s0.provenance.source == "FRED"
+    assert s0.title  # human title from the registry
+
+
+def test_fetch_fred_ignores_ticker(monkeypatch):
+    monkeypatch.setenv("FRED_API_KEY", "testkey")
+    snap = fetch_fred("ANYTHING", fetch=lambda sid, api_key: {"observations": []})
+    assert isinstance(snap, MacroSnapshot)
+
+
+def test_fetch_fred_without_key_raises_data_unavailable(monkeypatch):
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    with pytest.raises(DataUnavailable):
+        fetch_fred("NVDA", fetch=lambda sid, api_key: {"observations": []})
