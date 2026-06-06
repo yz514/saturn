@@ -6,12 +6,18 @@ Thin urllib fetchers (added in later tasks) handle the live path.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date
 from html import unescape
 
-from saturn.models import FinancialFact, Fundamentals, Provenance
+from saturn.config import get_settings
+from saturn.ingestion.cache import write_cache
+from saturn.ingestion.errors import DataUnavailable
+from saturn.ingestion.http import http_get
+from saturn.ingestion.identifiers import ticker_to_cik
+from saturn.models import FilingSection, FinancialFact, Fundamentals, Provenance
 
 logger = logging.getLogger(__name__)
 
@@ -175,3 +181,70 @@ def _extract_filing_sections(html: str) -> list[dict]:
         if body:
             out.append({"name": name, "text": body})
     return out
+
+
+_EXCERPT_CHARS = 4000
+
+
+def _ua() -> str:
+    """Return the configured SEC User-Agent, or raise — SEC requires a real
+    contact UA, so an unconfigured EDGAR becomes an honest gap (DataUnavailable)."""
+    ua = get_settings().sec_user_agent
+    if not ua:
+        raise DataUnavailable("SEC_USER_AGENT not set; required for SEC EDGAR access")
+    return ua
+
+
+def _fetch_companyfacts(cik: str) -> dict:
+    return json.loads(http_get(_COMPANYFACTS_URL.format(cik=cik), user_agent=_ua(), accept="application/json"))
+
+
+def _fetch_submissions(cik: str) -> dict:
+    return json.loads(http_get(_SUBMISSIONS_URL.format(cik=cik), user_agent=_ua(), accept="application/json"))
+
+
+def _fetch_filing_html(cik: str, accession: str, doc: str) -> str:
+    url = _ARCHIVE_URL.format(cik_int=int(cik), accn_nodash=accession.replace("-", ""), doc=doc)
+    return http_get(url, user_agent=_ua(), accept="text/html").decode("utf-8", errors="replace")
+
+
+def _cache_full_text(cik: str, name: str, text: str) -> str:
+    """Persist a section's full text and return a cache reference string."""
+    key = f"{cik}_10k_{name.lower().replace(' ', '_').replace('&', 'and')}"
+    path = write_cache("edgar_sections", key, {"text": text}, today=date.today())
+    return str(path)
+
+
+def fetch_edgar(ticker: str, *, mock: bool = False) -> dict:
+    """Return {"fundamentals", "filing_sections", "name", "cik"} for `ticker`.
+
+    Raises DataUnavailable if the ticker has no CIK or SEC_USER_AGENT is unset;
+    SourceFailure on transport errors (both recorded as a gap by the dispatcher).
+    """
+    cik = ticker_to_cik(ticker)
+
+    cf = _fetch_companyfacts(cik)
+    fundamentals = _parse_companyfacts(cf)
+    name = cf.get("entityName") or ticker
+
+    filing_sections: list[FilingSection] = []
+    submissions = _fetch_submissions(cik)
+    sel = _select_latest_10k(submissions)
+    if sel:
+        filing_url = _ARCHIVE_URL.format(
+            cik_int=int(cik), accn_nodash=sel["accession"].replace("-", ""), doc=sel["primary_document"]
+        )
+        as_of = date.fromisoformat(sel["filing_date"]) if sel.get("filing_date") else None
+        html = _fetch_filing_html(cik, sel["accession"], sel["primary_document"])
+        for sec in _extract_filing_sections(html):
+            ref = _cache_full_text(cik, sec["name"], sec["text"])
+            filing_sections.append(
+                FilingSection(
+                    name=sec["name"],
+                    excerpt=sec["text"][:_EXCERPT_CHARS],
+                    full_text_cache_ref=ref,
+                    provenance=Provenance(source="SEC EDGAR", source_url=filing_url, as_of=as_of),
+                )
+            )
+
+    return {"fundamentals": fundamentals, "filing_sections": filing_sections, "name": name, "cik": cik}

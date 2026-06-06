@@ -100,3 +100,42 @@ def test_strip_html_drops_script_and_style_content():
     assert "Hello" in text
     assert "color" not in text
     assert "var a" not in text
+
+
+from saturn.ingestion.edgar import fetch_edgar
+from saturn.models import FilingSection
+
+
+def test_fetch_edgar_assembles_dossier_dict(monkeypatch):
+    cf = _companyfacts()
+    sub = _submissions()
+    html = _tenk_html()
+
+    monkeypatch.setattr("saturn.ingestion.edgar.ticker_to_cik", lambda t: "0001045810")
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_companyfacts", lambda cik: cf)
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_submissions", lambda cik: sub)
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_filing_html", lambda cik, accn, doc: html)
+    monkeypatch.setattr("saturn.ingestion.edgar._cache_full_text", lambda *a, **k: "cache://ref")
+
+    result = fetch_edgar("NVDA")
+    assert result["cik"] == "0001045810"
+    assert result["name"] == "NVIDIA CORP"
+    assert any(f.concept == "Revenues" for f in result["fundamentals"].facts)
+    sections = result["filing_sections"]
+    assert all(isinstance(s, FilingSection) for s in sections)
+    rf = next(s for s in sections if s.name == "Risk Factors")
+    assert rf.provenance.source == "SEC EDGAR"
+    assert rf.full_text_cache_ref == "cache://ref"
+    assert len(rf.excerpt) <= 4000
+
+
+def test_fetch_edgar_unknown_ticker_propagates_data_unavailable(monkeypatch):
+    from saturn.ingestion.errors import DataUnavailable
+    import pytest
+
+    def no_cik(t):
+        raise DataUnavailable(f"no CIK for {t}")
+
+    monkeypatch.setattr("saturn.ingestion.edgar.ticker_to_cik", no_cik)
+    with pytest.raises(DataUnavailable):
+        fetch_edgar("ZZZZ")
