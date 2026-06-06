@@ -66,7 +66,6 @@ def _fetch_series_observations(series_id: str, api_key: str) -> dict:
 def fetch_fred(
     ticker: str | None = None,
     *,
-    mock: bool = False,
     fetch: Callable[[str, str], dict] = _fetch_series_observations,
 ) -> MacroSnapshot:
     """Return a MacroSnapshot of the curated FRED series. `ticker` is ignored
@@ -77,6 +76,10 @@ def fetch_fred(
         raise DataUnavailable("FRED_API_KEY not set")
 
     series: list[MacroSeries] = []
+    # All-or-nothing: any per-series transport error raises SourceFailure out of
+    # this function, and the dispatcher records the whole "fred" source as one gap.
+    # Per-series partial degradation is a deliberate future enhancement, not needed
+    # while the curated list is small and stable.
     for series_id, title in FRED_SERIES:
         raw = fetch(series_id, api_key)
         obs = _parse_observations(raw)
