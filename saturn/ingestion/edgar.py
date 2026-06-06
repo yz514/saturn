@@ -63,6 +63,9 @@ def _parse_companyfacts(raw: dict, *, max_years: int = 4) -> Fundamentals:
     cik = raw.get("cik")
     url = _COMPANYFACTS_URL.format(cik=f"{int(cik):010d}") if cik is not None else None
     gaap = (raw.get("facts", {}) or {}).get("us-gaap", {})
+    # NOTE: first-present-tag-wins — if a filer switched XBRL tags mid-history,
+    # years reported only under a non-selected alias are omitted. Fine for the
+    # recent `max_years` window we surface.
 
     facts: list[FinancialFact] = []
     for canonical, tags in EDGAR_CONCEPTS.items():
@@ -76,12 +79,17 @@ def _parse_companyfacts(raw: dict, *, max_years: int = 4) -> Fundamentals:
         annual = _annual_usd_entries(block)
         for fy in sorted(annual.keys(), reverse=True)[:max_years]:
             row = annual[fy]
-            filed = row.get("filed")
-            as_of = date.fromisoformat(filed) if filed else None
+            try:
+                value = float(row["val"])
+                filed = row.get("filed")
+                as_of = date.fromisoformat(filed) if filed else None
+            except (TypeError, ValueError) as exc:
+                logger.warning("skipping malformed EDGAR row for %s FY%s: %s", canonical, fy, exc)
+                continue
             facts.append(
                 FinancialFact(
                     concept=canonical,
-                    value=float(row["val"]),
+                    value=value,
                     unit="USD",
                     fiscal_period=f"FY{fy}",
                     provenance=Provenance(source="SEC EDGAR", source_url=url, as_of=as_of),

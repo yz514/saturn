@@ -43,3 +43,9 @@ def test_max_years_limits_history():
     f = _parse_companyfacts(_companyfacts(), max_years=1)
     revs = [x for x in f.facts if x.concept == "Revenues"]
     assert [x.fiscal_period for x in revs] == ["FY2024"]
+
+
+def test_parse_empty_payload_returns_no_facts():
+    from saturn.ingestion.edgar import _parse_companyfacts as parse
+    assert parse({}).facts == []
+    assert parse({"facts": {}}).facts == []
