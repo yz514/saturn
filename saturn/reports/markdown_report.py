@@ -38,18 +38,23 @@ def render(report: ResearchReport) -> str:
     if c.quote:
         out.append(f"- Price: {_fmt_money(c.quote.price)} {c.quote.currency or ''}".rstrip())
         out.append(f"- Market cap: {_fmt_money(c.quote.market_cap)}")
+        out.append(f"- _Source: {c.quote.provenance.source}_")
     else:
-        out.append("- Price: N/A")
-        out.append("- Market cap: N/A")
+        out.append("_No quote available._")
     out.append("")
 
     out += ["## 5. Financial Snapshot", ""]
     if c.fundamentals and c.fundamentals.facts:
-        out.append("| Concept | Period | Value |")
-        out.append("| --- | --- | --- |")
-        for fact in c.fundamentals.facts:
-            val = f"{fact.value:,.0f} {fact.unit or ''}".strip() if fact.value is not None else "N/A"
-            out.append(f"| {fact.concept} | {fact.fiscal_period or '?'} | {val} |")
+        out.append("| Concept | Period | Value | Unit | Source |")
+        out.append("| --- | --- | --- | --- | --- |")
+        for f in c.fundamentals.facts:
+            val = _fmt_money(f.value) if (f.unit or "").upper() == "USD" else (
+                f.value if f.value is not None else "N/A"
+            )
+            out.append(
+                f"| {f.concept} | {f.fiscal_period or 'N/A'} | {val} "
+                f"| {f.unit or ''} | {f.provenance.source} |"
+            )
         out.append("")
     out += [a.financial_snapshot, ""]
 
@@ -72,12 +77,31 @@ def render(report: ResearchReport) -> str:
     out += ["## 11. Open Questions", "", a.open_questions, ""]
     out += ["## 12. Final View", "", d.final_view, ""]
 
-    out += ["## 13. Sources", ""]
+    out += ["## 13. Macro Snapshot", ""]
+    if c.macro and c.macro.series:
+        out.append("| Series | Latest | As of | Source |")
+        out.append("| --- | --- | --- | --- |")
+        for m in c.macro.series:
+            latest = m.observations[-1] if m.observations else None
+            val = latest[1] if latest else "N/A"
+            asof = latest[0] if latest else "N/A"
+            out.append(f"| {m.title} | {val} | {asof} | {m.provenance.source} |")
+        out.append("")
+    else:
+        out.append("_No macro data available._")
+        out.append("")
+
+    out += ["## 14. Sources", ""]
     if report.sources:
         out += [f"- {s}" for s in report.sources]
     else:
         out.append("_No sources recorded._")
     out.append("")
+
+    if c.gaps:
+        out += ["## 15. Data Gaps", ""]
+        out += [f"- **{g.source}**: {g.reason}" for g in c.gaps]
+        out.append("")
 
     out += ["---", "", _DISCLAIMER, ""]
     return "\n".join(out)

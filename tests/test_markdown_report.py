@@ -48,10 +48,21 @@ def test_render_has_all_thirteen_sections():
         "## 10. Valuation Discussion",
         "## 11. Open Questions",
         "## 12. Final View",
-        "## 13. Sources",
+        "## 13. Macro Snapshot",
+        "## 14. Sources",
     ]
     for header in expected:
         assert header in md, f"missing: {header}"
+
+
+def test_render_includes_quote_and_financials_table():
+    md = render(_sample_report())
+    assert "# NVDA Equity Research Report" in md
+    assert "$900" in md  # quote price humanized
+    assert "Revenues" in md  # fundamentals table
+    assert "FY2024" in md
+    assert "Federal Funds Effective Rate" in md  # macro snapshot
+    assert "not investment advice" in md
 
 
 def test_render_includes_disclaimer_and_content():

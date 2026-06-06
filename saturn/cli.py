@@ -8,7 +8,7 @@ import typer
 
 from saturn.config import get_settings
 from saturn.ingestion.dossier import build_dossier
-from saturn.ingestion.prices import IngestionError
+from saturn.ingestion.errors import IngestionError
 from saturn.llm.anthropic_client import AnthropicClient
 from saturn.llm.mock_client import MockLLMClient
 from saturn.reports.markdown_report import render
