@@ -16,14 +16,23 @@ PM/Synthesis, Report Writer.
 Structured ingestion + storage: prices, SEC filings, transcripts, news; a local
 storage layer separating raw / processed / generated outputs; metadata tracking.
 
-> **Partially pulled forward (2026-05-31).** The data-enrichment slice — a
-> vendor-neutral canonical `CompanyDossier` with provenance on every datum, a
-> dispatcher with soft-fail fallback + typed errors, per-source TTL caching, and
-> SEC EDGAR + FRED adapters (yfinance kept for price only) — is being built now,
-> ahead of the full Phase 1 agent roster, because it directly addresses follow-up
-> F1 (hallucination/grounding): the future Critic needs a thick, sourced evidence
-> base to verify claims against. FMP (Slice 2) and Finnhub (Slice 3) follow. Spec:
-> `docs/superpowers/specs/2026-05-31-data-ingestion-enrichment-design.md`.
+> **Partially pulled forward (started 2026-05-31).** The data-enrichment slice is
+> being built ahead of the full Phase 1 agent roster because it directly addresses
+> follow-up F1 (hallucination/grounding): the future Critic needs a thick, sourced
+> evidence base to verify claims against. Slices:
+> - **Slice 1 — framework ✅ merged (PR #3, 2026-06-06).** Vendor-neutral canonical
+>   `CompanyDossier` with provenance on every datum, soft-fail dispatcher + typed
+>   errors, per-source TTL cache, real yfinance `Quote`, dossier orchestration with
+>   EDGAR/FRED as injectable gap-seams, and inline-provenance rendering. See
+>   `docs/PROGRESS.md`.
+> - **Slice 1 — real adapters (next).** SEC EDGAR (companyfacts XBRL + targeted
+>   10-K sections) and FRED (macro) behind the seams, plus `identifiers.py`
+>   (ticker→CIK, FRED series). The genuinely-parallel EDGAR ‖ FRED pair.
+> - **Slice 2 — FMP** (ratios/estimates/transcripts/segments) and **Slice 3 —
+>   Finnhub** (news) follow.
+>
+> Spec: `docs/superpowers/specs/2026-05-31-data-ingestion-enrichment-design.md`;
+> framework plan: `docs/superpowers/plans/2026-06-06-enrichment-framework.md`.
 
 ## Phase 3 — Persistent Memory
 Company-level memory, thesis history, prior reports, vector search and a
