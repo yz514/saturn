@@ -26,6 +26,7 @@ def test_source_failure_becomes_gap():
 
     result, gap = route_to_source("fred", boom)
     assert result is None
+    assert isinstance(gap, SourceGap)
     assert gap.source == "fred"
     assert "connection reset" in gap.reason
 
@@ -37,4 +38,5 @@ def test_unexpected_error_also_becomes_gap():
     result, gap = route_to_source("fred", boom)
     assert result is None
     assert gap.source == "fred"
+    assert "ValueError" in gap.reason
     assert "surprise" in gap.reason
