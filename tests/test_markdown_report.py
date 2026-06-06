@@ -32,7 +32,7 @@ def _sample_report() -> ResearchReport:
     )
 
 
-def test_render_has_all_thirteen_sections():
+def test_render_has_all_sections():
     md = render(_sample_report())
     expected = [
         "# NVDA Equity Research Report",
@@ -62,7 +62,8 @@ def test_render_includes_quote_and_financials_table():
     assert "Revenues" in md  # fundamentals table
     assert "FY2024" in md
     assert "Federal Funds Effective Rate" in md  # macro snapshot
-    assert "not investment advice" in md
+    assert "_Source: yfinance (mock)_" in md  # quote source line
+    assert "| Concept | Period | Value | Unit | Source |" in md  # 5-col table header
 
 
 def test_render_includes_disclaimer_and_content():

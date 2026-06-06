@@ -47,13 +47,13 @@ def render(report: ResearchReport) -> str:
     if c.fundamentals and c.fundamentals.facts:
         out.append("| Concept | Period | Value | Unit | Source |")
         out.append("| --- | --- | --- | --- | --- |")
-        for f in c.fundamentals.facts:
-            val = _fmt_money(f.value) if (f.unit or "").upper() == "USD" else (
-                f.value if f.value is not None else "N/A"
+        for fact in c.fundamentals.facts:
+            val = _fmt_money(fact.value) if (fact.unit or "").upper() == "USD" else (
+                fact.value if fact.value is not None else "N/A"
             )
             out.append(
-                f"| {f.concept} | {f.fiscal_period or 'N/A'} | {val} "
-                f"| {f.unit or ''} | {f.provenance.source} |"
+                f"| {fact.concept} | {fact.fiscal_period or 'N/A'} | {val} "
+                f"| {fact.unit or ''} | {fact.provenance.source} |"
             )
         out.append("")
     out += [a.financial_snapshot, ""]
