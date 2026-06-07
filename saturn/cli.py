@@ -14,7 +14,7 @@ from saturn.llm.anthropic_client import AnthropicClient
 from saturn.llm.mock_client import MockLLMClient
 from saturn.reports.markdown_report import render
 from saturn.utils.logging import setup_logging
-from saturn.workflows.equity_research import run
+from saturn.workflows.equity_research import LLMResponseError, run
 
 app = typer.Typer(help="Saturn — autonomous equity research.")
 
@@ -58,7 +58,11 @@ def research(
         typer.echo(str(exc), err=True)
         raise typer.Exit(1)
 
-    report = run(company, llm, model_used=model_used, mock=mock)
+    try:
+        report = run(company, llm, model_used=model_used, mock=mock)
+    except LLMResponseError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
     markdown = render(report)
 
     settings.reports_dir.mkdir(parents=True, exist_ok=True)

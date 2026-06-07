@@ -50,3 +50,24 @@ def test_doctor_any_fail_exit_one(monkeypatch):
     result = CliRunner().invoke(app, ["doctor"])  # default ticker
     assert result.exit_code == 1
     assert "[FAIL]" in result.stdout
+
+
+def test_research_handles_llm_response_error(monkeypatch):
+    from typer.testing import CliRunner
+
+    from saturn.cli import app
+    from saturn.workflows.equity_research import LLMResponseError
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "testkey")
+    monkeypatch.setattr("saturn.cli.build_dossier", lambda ticker, *, mock: object())
+    monkeypatch.setattr("saturn.cli.AnthropicClient", lambda *a, **k: object())
+
+    def boom(*a, **k):
+        raise LLMResponseError("model returned malformed or truncated JSON for analysis")
+
+    monkeypatch.setattr("saturn.cli.run", boom)
+
+    result = CliRunner().invoke(app, ["research", "NVDA"])
+    assert result.exit_code == 1
+    assert "malformed or truncated JSON" in result.output
+    assert "Traceback" not in result.output
