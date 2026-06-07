@@ -60,6 +60,18 @@ class MacroSnapshot(BaseModel):
     series: list[MacroSeries] = Field(default_factory=list)
 
 
+class MaterialEvent(BaseModel):
+    """A single SEC 8-K filing (material event), optionally with a body excerpt."""
+
+    form: str = "8-K"
+    filing_date: date
+    item_codes: list[str] = Field(default_factory=list)
+    title: str | None = None
+    excerpt: str | None = None
+    full_text_cache_ref: str | None = None
+    provenance: Provenance
+
+
 class SourceGap(BaseModel):
     """A source that could not contribute, recorded instead of crashing."""
 
@@ -80,6 +92,7 @@ class CompanyDossier(BaseModel):
     quote: Quote | None = None
     fundamentals: Fundamentals | None = None
     filing_sections: list[FilingSection] = Field(default_factory=list)
+    material_events: list[MaterialEvent] = Field(default_factory=list)
     macro: MacroSnapshot | None = None
     news: list[NewsItem] = Field(default_factory=list)
     gaps: list[SourceGap] = Field(default_factory=list)
