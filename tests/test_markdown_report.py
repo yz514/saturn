@@ -49,7 +49,8 @@ def test_render_has_all_sections():
         "## 11. Open Questions",
         "## 12. Final View",
         "## 13. Macro Snapshot",
-        "## 14. Sources",
+        "## 14. Material Events (SEC 8-K)",
+        "## 15. Sources",
     ]
     for header in expected:
         assert header in md, f"missing: {header}"
@@ -80,5 +81,14 @@ def test_render_shows_data_gaps_section():
     report = _sample_report()
     report.company.gaps = [SourceGap(source="edgar", reason="edgar adapter not configured")]
     md = render(report)
-    assert "## 15. Data Gaps" in md
+    assert "## 16. Data Gaps" in md
     assert "**edgar**: edgar adapter not configured" in md
+
+
+def test_render_groups_financials_and_shows_events():
+    md = render(_sample_report())  # uses _mock_dossier, has a quarterly fact + event
+    assert "Q2 FY2025" in md                                   # quarterly row present
+    assert md.index("FY2024") < md.index("Q2 FY2025")  # annual grouped before quarterly
+    assert "## 14. Material Events (SEC 8-K)" in md            # new section
+    assert "Results of Operations and Financial Condition" in md
+    assert "## 15. Sources" in md                              # renumbered

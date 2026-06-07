@@ -114,3 +114,34 @@ def test_build_dossier_default_fred_is_wired():
     assert d.macro is not None
     assert d.macro.series[0].series_id == "FEDFUNDS"
     assert "edgar" in {g.source for g in d.gaps}
+
+
+def test_build_dossier_unpacks_material_events():
+    from datetime import date
+    from saturn.models import MaterialEvent, Provenance, Quote
+
+    def fake_edgar(ticker):
+        return {
+            "fundamentals": None,
+            "filing_sections": [],
+            "material_events": [
+                MaterialEvent(filing_date=date(2024, 5, 22), item_codes=["2.02"], provenance=Provenance(source="SEC EDGAR"))
+            ],
+            "name": "NVIDIA CORP",
+            "cik": "0001045810",
+        }
+
+    d = build_dossier(
+        "NVDA", mock=False,
+        quote_fn=lambda t, *, mock: Quote(price=1.0, provenance=Provenance(source="yfinance")),
+        edgar_fn=fake_edgar, fred_fn=None,
+    )
+    assert len(d.material_events) == 1
+    assert d.material_events[0].item_codes == ["2.02"]
+
+
+def test_mock_dossier_has_quarterly_and_event():
+    from saturn.ingestion.dossier import _mock_dossier
+    d = _mock_dossier("NVDA")
+    assert any(f.fiscal_period.startswith("Q") for f in d.fundamentals.facts)
+    assert d.material_events and d.material_events[0].item_codes

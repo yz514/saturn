@@ -47,7 +47,9 @@ def render(report: ResearchReport) -> str:
     if c.fundamentals and c.fundamentals.facts:
         out.append("| Concept | Period | Value | Unit | Source |")
         out.append("| --- | --- | --- | --- | --- |")
-        for fact in c.fundamentals.facts:
+        _annual = [x for x in c.fundamentals.facts if not (x.fiscal_period or "").startswith("Q")]
+        _quarterly = [x for x in c.fundamentals.facts if (x.fiscal_period or "").startswith("Q")]
+        for fact in _annual + _quarterly:
             val = _fmt_money(fact.value) if (fact.unit or "").upper() == "USD" else (
                 fact.value if fact.value is not None else "N/A"
             )
@@ -91,7 +93,27 @@ def render(report: ResearchReport) -> str:
         out.append("_No macro data available._")
         out.append("")
 
-    out += ["## 14. Sources", ""]
+    out += ["## 14. Material Events (SEC 8-K)", ""]
+    if c.material_events:
+        for ev in c.material_events:
+            labels = ", ".join(ev.item_codes)
+            head = f"- **{ev.filing_date}**"
+            if ev.title:
+                head += f" — {ev.title}"
+            if labels:
+                head += f" (items {labels})"
+            if ev.provenance.source_url:
+                head += f" — [filing]({ev.provenance.source_url})"
+            out.append(head)
+            if ev.excerpt:
+                quoted = "\n  > ".join(ev.excerpt.splitlines() or [ev.excerpt])
+                out.append(f"  > {quoted}")
+        out.append("")
+    else:
+        out.append("_No material events in the last 12 months._")
+        out.append("")
+
+    out += ["## 15. Sources", ""]
     if report.sources:
         out += [f"- {s}" for s in report.sources]
     else:
@@ -99,7 +121,7 @@ def render(report: ResearchReport) -> str:
     out.append("")
 
     if c.gaps:
-        out += ["## 15. Data Gaps", ""]
+        out += ["## 16. Data Gaps", ""]
         out += [f"- **{g.source}**: {g.reason}" for g in c.gaps]
         out.append("")
 

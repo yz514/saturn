@@ -10,7 +10,9 @@
             {"end": "2023-01-29", "val": 26974000000, "fy": 2023, "fp": "FY", "form": "10-K", "filed": "2023-02-24"},
             {"end": "2024-01-28", "val": 60922000000, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-02-21"},
             {"end": "2024-01-28", "val": 60900000000, "fy": 2024, "fp": "FY", "form": "10-K/A", "filed": "2024-03-01"},
-            {"end": "2023-10-29", "val": 18120000000, "fy": 2024, "fp": "Q3", "form": "10-Q", "filed": "2023-11-21"}
+            {"end": "2023-10-29", "val": 18120000000, "fy": 2024, "fp": "Q3", "form": "10-Q", "filed": "2023-11-21"},
+            {"end": "2024-04-28", "val": 26044000000, "fy": 2025, "fp": "Q1", "form": "10-Q", "filed": "2024-05-29"},
+            {"end": "2024-07-28", "val": 30040000000, "fy": 2025, "fp": "Q2", "form": "10-Q", "filed": "2024-08-28"}
           ]
         }
       },
@@ -22,6 +24,36 @@
             {"end": "2024-01-28", "val": 29760000000, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-02-21"}
           ]
         }
+      },
+      "CostOfRevenue": {
+        "label": "Cost of revenue",
+        "units": {"USD": [
+          {"end": "2024-01-28", "val": 16621000000, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-02-21"}
+        ]}
+      },
+      "AssetsCurrent": {
+        "label": "Current assets",
+        "units": {"USD": [
+          {"end": "2024-01-28", "val": 44345000000, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-02-21"}
+        ]}
+      },
+      "PaymentsToAcquirePropertyPlantAndEquipment": {
+        "label": "Capex",
+        "units": {"USD": [
+          {"end": "2024-01-28", "val": 1069000000, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-02-21"}
+        ]}
+      },
+      "EarningsPerShareDiluted": {
+        "label": "Diluted EPS",
+        "units": {"USD/shares": [
+          {"end": "2024-01-28", "val": 11.93, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-02-21"}
+        ]}
+      },
+      "WeightedAverageNumberOfDilutedSharesOutstanding": {
+        "label": "Diluted shares",
+        "units": {"shares": [
+          {"end": "2024-01-28", "val": 2494000000, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-02-21"}
+        ]}
       }
     }
   }

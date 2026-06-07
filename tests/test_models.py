@@ -55,3 +55,29 @@ def test_dossier_with_quote_and_facts():
     assert d.quote.price == 900.0
     assert d.fundamentals.facts[0].concept == "Revenues"
     assert d.gaps[0].source == "FRED"
+
+
+def test_material_event_construction():
+    from datetime import date as _date
+
+    from saturn.models import MaterialEvent, Provenance
+
+    ev = MaterialEvent(
+        filing_date=_date(2026, 2, 21),
+        item_codes=["2.02", "9.01"],
+        title="Results of Operations and Financial Condition",
+        excerpt="Q4 revenue was $X.",
+        provenance=Provenance(source="SEC EDGAR"),
+    )
+    assert ev.form == "8-K"
+    assert ev.item_codes == ["2.02", "9.01"]
+    assert ev.full_text_cache_ref is None
+
+
+def test_dossier_has_material_events_default():
+    from datetime import date as _date
+
+    from saturn.models import CompanyDossier
+
+    d = CompanyDossier(ticker="NVDA", name="NVIDIA Corporation", generated_at=_date(2026, 6, 6))
+    assert d.material_events == []
