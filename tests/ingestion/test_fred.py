@@ -66,3 +66,11 @@ def test_fetch_fred_without_key_raises_data_unavailable(monkeypatch):
     monkeypatch.delenv("FRED_API_KEY", raising=False)
     with pytest.raises(DataUnavailable):
         fetch_fred("NVDA", fetch=lambda sid, api_key: {"observations": []})
+
+
+def test_registry_includes_expanded_series():
+    ids = {s[0] for s in FRED_SERIES}
+    # original core
+    assert {"FEDFUNDS", "CPIAUCSL", "DGS10", "DGS2", "UNRATE", "M2SL"} <= ids
+    # new breadth
+    assert {"T10Y2Y", "PCEPILFE", "CPILFESL", "GDPC1", "PAYEMS", "BAMLH0A0HYM2", "VIXCLS", "DCOILWTICO", "DTWEXBGS"} <= ids

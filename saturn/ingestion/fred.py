@@ -22,12 +22,21 @@ logger = logging.getLogger(__name__)
 # Curated macro series: (series_id, human title). Spec §3 default set.
 FRED_SERIES: list[tuple[str, str]] = [
     ("FEDFUNDS", "Federal Funds Effective Rate"),
-    ("CPIAUCSL", "Consumer Price Index (All Urban Consumers)"),
-    ("PPIACO", "Producer Price Index (All Commodities)"),
     ("DGS10", "10-Year Treasury Yield"),
     ("DGS2", "2-Year Treasury Yield"),
+    ("T10Y2Y", "10Y-2Y Treasury Spread"),
+    ("CPIAUCSL", "Consumer Price Index (All Urban Consumers)"),
+    ("CPILFESL", "Core CPI (ex Food & Energy)"),
+    ("PCEPILFE", "Core PCE Price Index"),
+    ("PPIACO", "Producer Price Index (All Commodities)"),
+    ("GDPC1", "Real GDP"),
     ("UNRATE", "Unemployment Rate"),
+    ("PAYEMS", "Nonfarm Payrolls"),
     ("M2SL", "M2 Money Supply"),
+    ("BAMLH0A0HYM2", "High-Yield Credit Spread"),
+    ("VIXCLS", "CBOE Volatility Index (VIX)"),
+    ("DCOILWTICO", "WTI Crude Oil Price"),
+    ("DTWEXBGS", "Trade-Weighted US Dollar Index"),
 ]
 
 _OBS_URL = (
