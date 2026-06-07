@@ -4,8 +4,19 @@ from datetime import date
 
 from saturn.ingestion.dossier import _mock_dossier
 from saturn.llm.mock_client import MockLLMClient
+from saturn.models import (
+    CompanyDossier,
+    FilingSection,
+    FinancialFact,
+    Fundamentals,
+    MaterialEvent,
+    Provenance,
+)
 from saturn.workflows.equity_research import (
     LLMResponseError,
+    _CTX_MAX_ANNUAL,
+    _CTX_MAX_EVENTS,
+    _CTX_SECTION_CHARS,
     _MAX_OUTPUT_TOKENS,
     _company_context,
     analyze,
@@ -97,24 +108,6 @@ def test_debate_requests_max_output_tokens():
     assert client.calls == [_MAX_OUTPUT_TOKENS]
 
 
-from datetime import date
-
-from saturn.models import (
-    CompanyDossier,
-    FilingSection,
-    FinancialFact,
-    Fundamentals,
-    MaterialEvent,
-    Provenance,
-)
-from saturn.workflows.equity_research import (
-    _CTX_MAX_ANNUAL,
-    _CTX_MAX_EVENTS,
-    _CTX_SECTION_CHARS,
-    _company_context,
-)
-
-
 def _big_dossier() -> CompanyDossier:
     prov = Provenance(source="SEC EDGAR")
     facts = []
@@ -142,13 +135,18 @@ def test_context_caps_annual_facts():
     ctx = _company_context(_big_dossier())
     assert "FY2025" in ctx and "FY2024" in ctx and "FY2023" in ctx
     assert "FY2019" not in ctx and "FY2020" not in ctx
-    assert _CTX_MAX_ANNUAL == 3
 
 
 def test_context_trims_section_excerpt():
     ctx = _company_context(_big_dossier())
-    run_of_r = max((len(s) for s in ctx.split() if set(s) == {"R"}), default=0)
-    assert run_of_r <= _CTX_SECTION_CHARS
+    assert "Risk Factors" in ctx                       # section rendered
+    assert "R" * (_CTX_SECTION_CHARS + 1) not in ctx   # excerpt trimmed to the cap
+
+
+def test_context_caps_quarterly_facts():
+    ctx = _company_context(_big_dossier())
+    assert "Q2 FY2025" in ctx and "Q3 FY2024" in ctx        # most-recent 4 kept
+    assert "Q1 FY2024" not in ctx and "Q2 FY2024" not in ctx  # older quarters dropped
 
 
 def test_context_caps_events():

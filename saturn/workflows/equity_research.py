@@ -68,6 +68,8 @@ def _select_context_facts(facts: list) -> list:
     for items in by_concept.values():
         annual = [x for x in items if (x.fiscal_period or "").startswith("FY")]
         quarterly = [x for x in items if (x.fiscal_period or "").startswith("Q")]
+        # facts whose fiscal_period isn't FY*/Q* (e.g. TTM) are intentionally
+        # excluded from the prompt context.
         annual.sort(key=lambda x: _fy_num(x.fiscal_period), reverse=True)
         quarterly.sort(key=lambda x: _q_sort(x.fiscal_period), reverse=True)
         out.extend(annual[:_CTX_MAX_ANNUAL])
