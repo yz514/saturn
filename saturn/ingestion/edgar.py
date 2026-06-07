@@ -8,15 +8,22 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from saturn.config import get_settings
 from saturn.ingestion.cache import write_cache
-from saturn.ingestion.edgar_filings import _extract_filing_sections, _select_latest
+from saturn.ingestion.edgar_filings import (
+    EIGHT_K_ITEM_LABELS,
+    HIGH_VALUE_8K_ITEMS,
+    _extract_8k,
+    _extract_filing_sections,
+    _select_latest,
+    _select_recent_8ks,
+)
 from saturn.ingestion.errors import DataUnavailable
 from saturn.ingestion.http import http_get
 from saturn.ingestion.identifiers import ticker_to_cik
-from saturn.models import FilingSection, FinancialFact, Fundamentals, Provenance
+from saturn.models import FilingSection, FinancialFact, Fundamentals, MaterialEvent, Provenance
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +153,7 @@ def _append_fact(facts: list, concept: str, unit: str, fiscal_period: str, row: 
 
 
 _EXCERPT_CHARS = 4000
+_EIGHT_K_WINDOW_DAYS = 800
 
 
 def _ua() -> str:
@@ -209,4 +217,57 @@ def fetch_edgar(ticker: str) -> dict:
                 )
             )
 
-    return {"fundamentals": fundamentals, "filing_sections": filing_sections, "name": name, "cik": cik}
+    # 10-Q MD&A (latest quarterly report)
+    q10 = _select_latest(submissions, "10-Q")
+    if q10:
+        q_url = _ARCHIVE_URL.format(
+            cik_int=int(cik), accn_nodash=q10["accession"].replace("-", ""), doc=q10["primary_document"]
+        )
+        q_as_of = date.fromisoformat(q10["filing_date"]) if q10.get("filing_date") else None
+        q_html = _fetch_filing_html(cik, q10["accession"], q10["primary_document"])
+        for sec in _extract_filing_sections(q_html):
+            if sec["name"] != "Management Discussion & Analysis":
+                continue  # from a 10-Q we only keep the quarterly MD&A
+            ref = _cache_full_text(cik, f"10q_{sec['name']}", sec["text"])
+            filing_sections.append(
+                FilingSection(
+                    name=sec["name"],
+                    excerpt=sec["text"][:_EXCERPT_CHARS],
+                    full_text_cache_ref=ref,
+                    provenance=Provenance(source="SEC EDGAR", source_url=q_url, as_of=q_as_of),
+                )
+            )
+
+    # 8-K material events (last ~12 months)
+    material_events: list[MaterialEvent] = []
+    since = date.today() - timedelta(days=_EIGHT_K_WINDOW_DAYS)
+    for e in _select_recent_8ks(submissions, since=since):
+        ev_url = _ARCHIVE_URL.format(
+            cik_int=int(cik), accn_nodash=e["accession"].replace("-", ""), doc=e["primary_document"]
+        )
+        codes = e["item_codes"]
+        title = next((EIGHT_K_ITEM_LABELS.get(c) for c in codes if c in EIGHT_K_ITEM_LABELS), None)
+        excerpt = cache_ref = None
+        if any(c in HIGH_VALUE_8K_ITEMS for c in codes):
+            body = _extract_8k(_fetch_filing_html(cik, e["accession"], e["primary_document"]))
+            if body:
+                excerpt = body[:_EXCERPT_CHARS]
+                cache_ref = _cache_full_text(cik, f"8k_{e['accession']}", body)
+        material_events.append(
+            MaterialEvent(
+                filing_date=date.fromisoformat(e["filing_date"]),
+                item_codes=codes,
+                title=title,
+                excerpt=excerpt,
+                full_text_cache_ref=cache_ref,
+                provenance=Provenance(source="SEC EDGAR", source_url=ev_url, as_of=date.fromisoformat(e["filing_date"])),
+            )
+        )
+
+    return {
+        "fundamentals": fundamentals,
+        "filing_sections": filing_sections,
+        "material_events": material_events,
+        "name": name,
+        "cik": cik,
+    }

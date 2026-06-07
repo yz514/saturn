@@ -140,3 +140,42 @@ def test_parse_includes_expanded_concepts():
     assert {"CostOfRevenue", "AssetsCurrent", "CapitalExpenditures"} <= concepts
     capex = next(x for x in f.facts if x.concept == "CapitalExpenditures")
     assert capex.unit == "USD" and capex.value == 1069000000
+
+
+def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
+    from datetime import date as _date
+
+    cf = _companyfacts()
+    sub = _submissions()  # has a 10-Q and two 8-Ks
+    tenk = (FIX / "tenk_excerpt.html").read_text(encoding="utf-8")
+    eightk = (FIX / "eightk_excerpt.html").read_text(encoding="utf-8")
+
+    monkeypatch.setattr("saturn.ingestion.edgar.ticker_to_cik", lambda t: "0001045810")
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_companyfacts", lambda cik: cf)
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_submissions", lambda cik: sub)
+
+    def fake_html(cik, accn, doc):
+        return eightk if doc.startswith("ev-") else tenk
+
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_filing_html", fake_html)
+    monkeypatch.setattr("saturn.ingestion.edgar._cache_full_text", lambda *a, **k: "cache://ref")
+
+    result = fetch_edgar("NVDA")
+
+    # 8-K material events present, newest first, high-value item carries an excerpt
+    events = result["material_events"]
+    assert events, "expected material events"
+    ev = events[0]
+    assert isinstance(ev.filing_date, _date)          # converted from ISO string to date
+    assert ev.filing_date.isoformat() == "2024-05-22"  # newest in-window 8-K
+    assert "2.02" in ev.item_codes
+    assert ev.excerpt and "record quarterly revenue" in ev.excerpt
+    assert ev.provenance.source == "SEC EDGAR"
+
+    # quarterly MD&A appended as a FilingSection with the 10-Q's filing date
+    mdna_dates = [
+        s.provenance.as_of
+        for s in result["filing_sections"]
+        if s.name == "Management Discussion & Analysis"
+    ]
+    assert any(d is not None and d.isoformat() == "2024-05-29" for d in mdna_dates)
