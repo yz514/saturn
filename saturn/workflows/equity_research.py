@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import date
 
+from pydantic import ValidationError
+
 from saturn.llm.base import LLMClient
 from saturn.models import (
     AnalysisSections,
@@ -26,6 +28,8 @@ DEBATE_SYSTEM = (
     "honest case for each side from the provided data, then a balanced final "
     "view. Respond with ONLY a valid JSON object, no prose, no code fences."
 )
+
+_MAX_OUTPUT_TOKENS = 4096
 
 
 def _company_context(dossier: CompanyDossier) -> str:
@@ -109,6 +113,20 @@ def _extract_json(text: str) -> str:
     return t
 
 
+class LLMResponseError(RuntimeError):
+    """Raised when the LLM response can't be parsed into the expected schema."""
+
+
+def _parse(model_cls, raw: str, schema: str):
+    """Parse an LLM JSON response into `model_cls`, or raise LLMResponseError."""
+    try:
+        return model_cls.model_validate_json(_extract_json(raw))
+    except (ValueError, ValidationError) as exc:
+        raise LLMResponseError(
+            f"model returned malformed or truncated JSON for {schema}"
+        ) from exc
+
+
 def analyze(
     company: CompanyDossier, llm: LLMClient, *, model: str | None = None
 ) -> AnalysisSections:
@@ -120,8 +138,8 @@ def analyze(
         "financial_snapshot, valuation_discussion, key_risks, open_questions."
     )
     logger.info("analyze: %s", company.ticker)
-    raw = llm.complete(ANALYSIS_SYSTEM, prompt, model=model)
-    return AnalysisSections.model_validate_json(_extract_json(raw))
+    raw = llm.complete(ANALYSIS_SYSTEM, prompt, model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+    return _parse(AnalysisSections, raw, "analysis")
 
 
 def debate(
@@ -134,8 +152,8 @@ def debate(
         "bull_thesis, bear_thesis, final_view."
     )
     logger.info("debate: %s", company.ticker)
-    raw = llm.complete(DEBATE_SYSTEM, prompt, model=model)
-    return DebateSections.model_validate_json(_extract_json(raw))
+    raw = llm.complete(DEBATE_SYSTEM, prompt, model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+    return _parse(DebateSections, raw, "debate")
 
 
 def _build_sources(dossier: CompanyDossier, *, mock: bool) -> list[str]:
