@@ -66,7 +66,9 @@ def check_edgar(ticker: str) -> CheckResult:
         nfacts = len(fund.facts) if fund else 0
         nsec = len(r.get("filing_sections") or [])
         nev = len(r.get("material_events") or [])
-        detail = f"{r.get('name')} (CIK {r.get('cik')}) - {nfacts} facts, {nsec} sections, {nev} events"
+        name = r.get("name") or ticker
+        cik = r.get("cik") or "?"
+        detail = f"{name} (CIK {cik}) - {nfacts} facts, {nsec} sections, {nev} events"
         return CheckResult(name="SEC EDGAR", ok=True, detail=detail)
     except IngestionError as exc:
         return CheckResult(name="SEC EDGAR", ok=False, detail=str(exc))
@@ -81,7 +83,7 @@ def check_fred() -> CheckResult:
             return CheckResult(name="FRED", ok=False, detail="no series returned")
         first = snap.series[0]
         latest = first.observations[-1] if first.observations else None
-        example = f", e.g. {first.series_id} {latest[1]} ({latest[0]})" if latest else ""
+        example = f", e.g. {first.series_id} {round(latest[1], 2)} ({latest[0]})" if latest else ""
         return CheckResult(name="FRED", ok=True, detail=f"{len(snap.series)} series{example}")
     except IngestionError as exc:
         return CheckResult(name="FRED", ok=False, detail=str(exc))

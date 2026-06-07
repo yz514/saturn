@@ -68,7 +68,7 @@ def test_check_yfinance_ok(monkeypatch):
     )
     r = check_yfinance("AAPL")
     assert r.name == "yfinance" and r.ok is True
-    assert "228" in r.detail
+    assert "$228" in r.detail
 
 
 def test_check_yfinance_error(monkeypatch):
@@ -124,3 +124,12 @@ def test_check_fred_data_unavailable(monkeypatch):
     monkeypatch.setattr("saturn.diagnostics.fetch_fred", boom)
     r = check_fred()
     assert r.ok is False and "FRED_API_KEY not set" in r.detail
+
+
+def test_check_yfinance_no_price(monkeypatch):
+    monkeypatch.setattr(
+        "saturn.diagnostics.fetch_quote",
+        lambda ticker: Quote(price=None, provenance=Provenance(source="yfinance")),
+    )
+    r = check_yfinance("AAPL")
+    assert r.ok is False and "no price returned" in r.detail
