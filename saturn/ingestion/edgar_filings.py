@@ -59,6 +59,8 @@ def _extract_filing_sections(html: str) -> list[dict]:
     return out
 
 
+# Curated subset of 8-K item codes -> human labels (used for rendering). Codes
+# not listed render by their bare number; extend as needed.
 EIGHT_K_ITEM_LABELS: dict[str, str] = {
     "1.01": "Entry into a Material Definitive Agreement",
     "1.02": "Termination of a Material Definitive Agreement",
@@ -74,10 +76,20 @@ HIGH_VALUE_8K_ITEMS = {"1.01", "2.01", "2.02", "5.02", "7.01", "8.01"}
 
 
 def _parse_8k_items(items_field: str) -> list[str]:
-    """Split SEC's comma-separated 8-K `items` string into item codes."""
+    """Split SEC's 8-K `items` string into bare item codes, e.g. ["2.02", "9.01"].
+
+    Robust to both the bare-code form ("2.02,9.01") and the descriptive form
+    EDGAR sometimes returns ("Item 2.02,Item 9.01"): the numeric code is
+    extracted from each comma-separated segment; segments with no code are dropped.
+    """
     if not items_field:
         return []
-    return [s.strip() for s in items_field.split(",") if s.strip()]
+    codes: list[str] = []
+    for seg in items_field.split(","):
+        m = re.search(r"\d+\.\d+", seg)
+        if m:
+            codes.append(m.group(0))
+    return codes
 
 
 def _select_recent_8ks(submissions: dict, *, since: date) -> list[dict]:

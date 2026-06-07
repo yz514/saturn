@@ -75,6 +75,22 @@ def test_parse_8k_items_splits_comma_string():
     assert _parse_8k_items("2.02,9.01") == ["2.02", "9.01"]
     assert _parse_8k_items(" 5.02 ") == ["5.02"]
     assert _parse_8k_items("") == []
+    assert _parse_8k_items("2.02,") == ["2.02"]                       # trailing comma
+    assert _parse_8k_items("Item 2.02,Item 9.01") == ["2.02", "9.01"]  # descriptive form
+
+
+def test_select_recent_8ks_sorts_newest_first():
+    subs = {
+        "filings": {"recent": {
+            "form": ["8-K", "8-K", "8-K"],
+            "accessionNumber": ["a-1", "a-2", "a-3"],
+            "primaryDocument": ["d1.htm", "d2.htm", "d3.htm"],
+            "filingDate": ["2024-02-01", "2024-06-01", "2024-04-01"],
+            "items": ["8.01", "2.02", "5.02"],
+        }}
+    }
+    recent = _select_recent_8ks(subs, since=date(2024, 1, 1))
+    assert [e["filing_date"] for e in recent] == ["2024-06-01", "2024-04-01", "2024-02-01"]
 
 
 def test_select_recent_8ks_filters_by_window():
