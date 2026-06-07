@@ -7,6 +7,7 @@ from datetime import date
 import typer
 
 from saturn.config import get_settings
+from saturn.diagnostics import format_report, run_checks
 from saturn.ingestion.dossier import build_dossier
 from saturn.ingestion.errors import IngestionError
 from saturn.llm.anthropic_client import AnthropicClient
@@ -66,6 +67,20 @@ def research(
 
     banner = "[MOCK MODE] " if mock else ""
     typer.echo(f"{banner}Wrote {out_path}")
+
+
+@app.command()
+def doctor(
+    ticker: str = typer.Argument("AAPL", help="Ticker to live-check, e.g. AAPL"),
+) -> None:
+    """Live-check Saturn's data dependencies (Anthropic, yfinance, EDGAR, FRED)."""
+    settings = get_settings()
+    setup_logging(settings.log_level)
+    ticker = ticker.upper()
+    results = run_checks(ticker, settings=settings)
+    typer.echo(format_report(ticker, results))
+    if any(not r.ok for r in results):
+        raise typer.Exit(1)
 
 
 def main() -> None:
