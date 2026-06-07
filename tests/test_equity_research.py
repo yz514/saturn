@@ -33,3 +33,14 @@ def test_company_context_renders_gaps_block():
     ctx = _company_context(dossier)
     assert "DATA GAPS" in ctx
     assert "fred: fred adapter not configured" in ctx
+
+
+def test_company_context_includes_material_events():
+    from saturn.ingestion.dossier import _mock_dossier
+    from saturn.workflows.equity_research import _company_context
+
+    ctx = _company_context(_mock_dossier("NVDA"))
+    assert "MATERIAL EVENTS" in ctx
+    assert "Results of Operations and Financial Condition" in ctx
+    # quarterly fact is rendered too (provenance-tagged fundamentals loop)
+    assert "Q2 FY2025" in ctx

@@ -65,6 +65,14 @@ def _company_context(dossier: CompanyDossier) -> str:
         for s in dossier.filing_sections:
             lines.append(f"- {s.name} (source: {s.provenance.source}): {s.excerpt}")
 
+    if dossier.material_events:
+        lines.append("\nMATERIAL EVENTS (SEC 8-K):")
+        for ev in dossier.material_events:
+            label = ev.title or ", ".join(ev.item_codes) or "8-K"
+            lines.append(f"- {ev.filing_date}: {label} (source: {ev.provenance.source})")
+            if ev.excerpt:
+                lines.append(f"  {ev.excerpt}")
+
     if dossier.macro and dossier.macro.series:
         lines.append("\nMACRO:")
         for m in dossier.macro.series:
