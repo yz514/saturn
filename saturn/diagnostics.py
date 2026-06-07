@@ -11,6 +11,10 @@ import logging
 
 from pydantic import BaseModel
 
+from saturn.ingestion.edgar import fetch_edgar
+from saturn.ingestion.errors import IngestionError
+from saturn.ingestion.fred import fetch_fred
+from saturn.ingestion.prices import fetch_quote
 from saturn.llm.anthropic_client import AnthropicClient
 
 logger = logging.getLogger(__name__)
@@ -39,3 +43,47 @@ def check_anthropic(settings) -> CheckResult:
         return CheckResult(name="Anthropic", ok=False, detail="empty response from model")
     except Exception as exc:  # noqa: BLE001 - a check never raises
         return CheckResult(name="Anthropic", ok=False, detail=str(exc))
+
+
+def _money(value: float | None) -> str:
+    return f"${value:,.0f}" if value is not None else "N/A"
+
+
+def check_yfinance(ticker: str) -> CheckResult:
+    try:
+        q = fetch_quote(ticker)
+        if q.price is None:
+            return CheckResult(name="yfinance", ok=False, detail="no price returned")
+        return CheckResult(name="yfinance", ok=True, detail=f"price {_money(q.price)}, market cap {_money(q.market_cap)}")
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name="yfinance", ok=False, detail=str(exc))
+
+
+def check_edgar(ticker: str) -> CheckResult:
+    try:
+        r = fetch_edgar(ticker)
+        fund = r.get("fundamentals")
+        nfacts = len(fund.facts) if fund else 0
+        nsec = len(r.get("filing_sections") or [])
+        nev = len(r.get("material_events") or [])
+        detail = f"{r.get('name')} (CIK {r.get('cik')}) - {nfacts} facts, {nsec} sections, {nev} events"
+        return CheckResult(name="SEC EDGAR", ok=True, detail=detail)
+    except IngestionError as exc:
+        return CheckResult(name="SEC EDGAR", ok=False, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name="SEC EDGAR", ok=False, detail=str(exc))
+
+
+def check_fred() -> CheckResult:
+    try:
+        snap = fetch_fred()
+        if not snap.series:
+            return CheckResult(name="FRED", ok=False, detail="no series returned")
+        first = snap.series[0]
+        latest = first.observations[-1] if first.observations else None
+        example = f", e.g. {first.series_id} {latest[1]} ({latest[0]})" if latest else ""
+        return CheckResult(name="FRED", ok=True, detail=f"{len(snap.series)} series{example}")
+    except IngestionError as exc:
+        return CheckResult(name="FRED", ok=False, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name="FRED", ok=False, detail=str(exc))
