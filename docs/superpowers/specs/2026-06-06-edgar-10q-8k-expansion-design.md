@@ -1,4 +1,4 @@
-# EDGAR Coverage Expansion — 10-Q Quarterly + 8-K Events — Design Spec
+# EDGAR + Data Coverage Expansion — 10-Q, 8-K, Fundamentals Breadth, FRED Breadth — Design Spec
 
 **Date:** 2026-06-06
 **Status:** Approved (design sign-off); pending spec review → `writing-plans`.
@@ -23,8 +23,11 @@ This slice adds both, plus the **10-Q MD&A** narrative (management's explanation
 - New canonical `MaterialEvent` type + `CompanyDossier.material_events` field.
 - Report + agent-context rendering of quarterly facts and material events (provenance-tagged).
 - A focused file split: move EDGAR *document* handling into `saturn/ingestion/edgar_filings.py`.
+- **Folded-in breadth wins** (cheap, same files — see §7): expanded EDGAR concept coverage (income/balance/cash-flow building blocks incl. CapEx), multi-unit XBRL support so **EPS and share counts** are captured (fixes the USD-only limitation), and an expanded **FRED series** list (yield-curve spread, core inflation, GDP, payrolls, credit spread, VIX, oil, USD index).
 
-**Out of scope (deferred)**
+**Out of scope (deferred to named follow-up slices)**
+- **Slice B — Fundamentals depth (next):** a deterministic derived-metrics layer (gross/operating/net margin, FCF = OperatingCF − CapEx, current ratio, debt/equity, ROE/ROA, YoY/QoQ growth), each provenance-tagged to its input facts. This slice ingests the *raw* facts that make those derivations possible (esp. CapEx, current assets/liabilities, shares) but computes nothing.
+- **Slice C — Macro depth (next):** FRED change/trend surfacing (latest + Δ vs prior + YoY + direction). This slice surfaces only the latest observation per series.
 - Other filing types (DEF 14A proxy, Form 4 insider, 13D/G) — future slices.
 - Per-call caching of `companyfacts`/`submissions` (cache module ready; still deferred).
 - Sector/industry/business-summary identity (profile source / FMP slice).
@@ -89,6 +92,50 @@ All network seams monkeypatched/injected; pure parsers tested against committed 
 - Extend/add a `submissions` fixture containing recent 8-Ks (with `items` field) and a 10-Q.
 - Add `tests/fixtures/edgar/eightk_excerpt.html` (multi-item 8-K including a 2.02 body).
 - Cases: quarterly extraction + latest-per-quarter + `max_quarters` cap; `_select_latest(form)`; `_select_recent_8ks` window filtering; `_parse_8k_items`; `_extract_8k` body; high-value-item triggers excerpt while others stay index-only; `fetch_edgar` assembles `material_events` (fetchers monkeypatched); renderer shows the 8-K section; `_company_context` includes the events block. Suite stays fully offline.
+- **Breadth (§7):** extend the companyfacts fixture with a per-share fact (`EarningsPerShareDiluted` under `units["USD/shares"]`), a share-count fact (under `units["shares"]`), and at least one new income/balance/cash-flow concept (e.g. `CostOfRevenue`, `AssetsCurrent`, CapEx). Assert the multi-unit selector captures them with the correct `FinancialFact.unit`; assert a representative subset of the expanded concepts parse; assert `FRED_SERIES` contains the new ids (incl. `T10Y2Y`, `PCEPILFE`).
+
+## §7. Folded-in breadth wins (cheap, same files)
+
+These expand coverage without new subsystems; the *depth* work they enable
+(derived metrics, macro change-surfacing) is deferred to Slices B and C.
+
+### §7.1 Expanded EDGAR concept coverage
+Grow `EDGAR_CONCEPTS` from 10 to ~25 canonical concepts spanning the three
+statements (first-present-tag-wins aliasing unchanged):
+- **Income:** add `CostOfRevenue`, `SellingGeneralAndAdministrativeExpense`,
+  `InterestExpense`, `IncomeTaxExpenseBenefit`.
+- **Balance sheet:** add `AssetsCurrent`, `LiabilitiesCurrent`, `LongTermDebt`
+  (alias `LongTermDebtNoncurrent`), `InventoryNet`, `PropertyPlantAndEquipmentNet`,
+  `RetainedEarnings` (alias `RetainedEarningsAccumulatedDeficit`).
+- **Cash flow:** add `CapitalExpenditures` (tag
+  `PaymentsToAcquirePropertyPlantAndEquipment`), `DividendsPaid` (aliases
+  `PaymentsOfDividendsCommonStock`/`PaymentsOfDividends`), `StockRepurchased`
+  (`PaymentsForRepurchaseOfCommonStock`), `DepreciationAndAmortization`
+  (aliases `DepreciationDepletionAndAmortization`/`DepreciationAmortizationAndAccretionNet`).
+
+(The existing 10 are retained.) **CapEx is added explicitly so Slice B can derive FCF.**
+
+### §7.2 Multi-unit XBRL support (EPS & shares)
+The current parser reads only `units["USD"]`, silently excluding per-share and
+share-count facts. Change the concept map so each concept declares its unit:
+`EDGAR_CONCEPTS: dict[str, dict]` where each value is
+`{"unit": "USD" | "USD/shares" | "shares", "tags": [...]}` (default `"USD"`).
+Generalize the entry selector `_annual_usd_entries(tag_block)` →
+`_entries(tag_block, unit)` reading `units[unit]` (same FY/10-K and Q/10-Q
+filtering, latest-filed-wins). Add concepts: `EarningsPerShareDiluted` /
+`EarningsPerShareBasic` (`USD/shares`), `WeightedAverageNumberOfDilutedSharesOutstanding`
+/ `...Basic` (`shares`). `FinancialFact.unit` carries the actual unit; the report's
+`_fmt_money` humanizes only USD, so per-share/share values render raw (acceptable;
+unit-aware formatting is the existing F4 follow-up).
+
+### §7.3 Expanded FRED series
+Grow `FRED_SERIES` from 7 to ~15 by adding: `T10Y2Y` (10y−2y spread; recession
+signal), `CPILFESL` (core CPI), `PCEPILFE` (core PCE; the Fed's preferred gauge),
+`GDPC1` (real GDP), `PAYEMS` (nonfarm payrolls), `BAMLH0A0HYM2` (high-yield credit
+spread), `VIXCLS` (volatility), `DCOILWTICO` (WTI oil), `DTWEXBGS` (broad USD
+index). Each is one registry entry; fetch/parse/provenance unchanged. NOTE: ~15
+FRED calls per live run — acceptable; the deferred per-call caching will amortize
+it. Surfacing the *change* (not just the latest observation) is Slice C.
 
 ## Success criteria
 
@@ -99,4 +146,6 @@ All network seams monkeypatched/injected; pure parsers tested against committed 
 
 ## Next step
 
-Spec self-review → user review → invoke `writing-plans` to decompose into bite-sized TDD tasks (model → file split/move → quarterly parse → `_select_latest`/8-K selectors → `_extract_8k` → `fetch_edgar` wiring → dossier/report/context integration → mock fixture → verification).
+Spec self-review → user review → invoke `writing-plans` to decompose into bite-sized TDD tasks (model → file split/move → multi-unit + expanded-concept parse → quarterly parse → `_select_latest`/8-K selectors → `_extract_8k` → expanded FRED series → `fetch_edgar` wiring → dossier/report/context integration → mock fixture → verification).
+
+After this slice: **Slice B — Fundamentals depth** (derived metrics over the now-rich raw facts) and **Slice C — Macro depth** (FRED change/trend surfacing), each its own brainstorm → spec → plan.
