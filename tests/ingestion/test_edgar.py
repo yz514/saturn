@@ -105,3 +105,19 @@ def test_ua_requires_sec_user_agent():
     # The autouse offline fixture drops SEC_USER_AGENT, so _ua() must raise.
     with pytest.raises(DataUnavailable):
         _ua()
+
+
+def test_parse_captures_non_usd_units():
+    f = _parse_companyfacts(_companyfacts())
+    eps = next((x for x in f.facts if x.concept == "EarningsPerShareDiluted"), None)
+    shares = next((x for x in f.facts if x.concept == "WeightedAverageSharesDiluted"), None)
+    assert eps is not None and eps.unit == "USD/shares" and eps.value == 11.93
+    assert shares is not None and shares.unit == "shares" and shares.value == 2494000000
+
+
+def test_parse_includes_expanded_concepts():
+    f = _parse_companyfacts(_companyfacts())
+    concepts = {x.concept for x in f.facts}
+    assert {"CostOfRevenue", "AssetsCurrent", "CapitalExpenditures"} <= concepts
+    capex = next(x for x in f.facts if x.concept == "CapitalExpenditures")
+    assert capex.unit == "USD" and capex.value == 1069000000

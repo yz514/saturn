@@ -20,23 +20,40 @@ from saturn.models import FilingSection, FinancialFact, Fundamentals, Provenance
 
 logger = logging.getLogger(__name__)
 
-# Canonical concept -> ordered list of us-gaap tags to try (first present wins).
-# Companies tag the same economic concept differently across filers/years.
-EDGAR_CONCEPTS: dict[str, list[str]] = {
-    "Revenues": [
-        "RevenueFromContractWithCustomerExcludingAssessedTax",
-        "Revenues",
-        "SalesRevenueNet",
-    ],
-    "GrossProfit": ["GrossProfit"],
-    "OperatingIncomeLoss": ["OperatingIncomeLoss"],
-    "NetIncomeLoss": ["NetIncomeLoss"],
-    "ResearchAndDevelopmentExpense": ["ResearchAndDevelopmentExpense"],
-    "Assets": ["Assets"],
-    "Liabilities": ["Liabilities"],
-    "StockholdersEquity": ["StockholdersEquity"],
-    "CashAndCashEquivalents": ["CashAndCashEquivalentsAtCarryingValue"],
-    "OperatingCashFlow": ["NetCashProvidedByUsedInOperatingActivities"],
+# Canonical concept -> {"unit": ..., "tags": [...]} (first present tag wins).
+EDGAR_CONCEPTS: dict[str, dict] = {
+    # Income statement (USD)
+    "Revenues": {"unit": "USD", "tags": ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"]},
+    "CostOfRevenue": {"unit": "USD", "tags": ["CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold"]},
+    "GrossProfit": {"unit": "USD", "tags": ["GrossProfit"]},
+    "SellingGeneralAndAdministrativeExpense": {"unit": "USD", "tags": ["SellingGeneralAndAdministrativeExpense"]},
+    "ResearchAndDevelopmentExpense": {"unit": "USD", "tags": ["ResearchAndDevelopmentExpense"]},
+    "OperatingIncomeLoss": {"unit": "USD", "tags": ["OperatingIncomeLoss"]},
+    "InterestExpense": {"unit": "USD", "tags": ["InterestExpense"]},
+    "IncomeTaxExpenseBenefit": {"unit": "USD", "tags": ["IncomeTaxExpenseBenefit"]},
+    "NetIncomeLoss": {"unit": "USD", "tags": ["NetIncomeLoss"]},
+    # Per-share / shares
+    "EarningsPerShareDiluted": {"unit": "USD/shares", "tags": ["EarningsPerShareDiluted"]},
+    "EarningsPerShareBasic": {"unit": "USD/shares", "tags": ["EarningsPerShareBasic"]},
+    "WeightedAverageSharesDiluted": {"unit": "shares", "tags": ["WeightedAverageNumberOfDilutedSharesOutstanding"]},
+    "WeightedAverageSharesBasic": {"unit": "shares", "tags": ["WeightedAverageNumberOfSharesOutstandingBasic"]},
+    # Balance sheet (USD)
+    "Assets": {"unit": "USD", "tags": ["Assets"]},
+    "AssetsCurrent": {"unit": "USD", "tags": ["AssetsCurrent"]},
+    "Liabilities": {"unit": "USD", "tags": ["Liabilities"]},
+    "LiabilitiesCurrent": {"unit": "USD", "tags": ["LiabilitiesCurrent"]},
+    "LongTermDebt": {"unit": "USD", "tags": ["LongTermDebtNoncurrent", "LongTermDebt"]},
+    "Inventory": {"unit": "USD", "tags": ["InventoryNet"]},
+    "PropertyPlantAndEquipmentNet": {"unit": "USD", "tags": ["PropertyPlantAndEquipmentNet"]},
+    "StockholdersEquity": {"unit": "USD", "tags": ["StockholdersEquity"]},
+    "RetainedEarnings": {"unit": "USD", "tags": ["RetainedEarningsAccumulatedDeficit"]},
+    "CashAndCashEquivalents": {"unit": "USD", "tags": ["CashAndCashEquivalentsAtCarryingValue"]},
+    # Cash flow (USD)
+    "OperatingCashFlow": {"unit": "USD", "tags": ["NetCashProvidedByUsedInOperatingActivities"]},
+    "CapitalExpenditures": {"unit": "USD", "tags": ["PaymentsToAcquirePropertyPlantAndEquipment"]},
+    "DepreciationAndAmortization": {"unit": "USD", "tags": ["DepreciationDepletionAndAmortization", "DepreciationAmortizationAndAccretionNet"]},
+    "DividendsPaid": {"unit": "USD", "tags": ["PaymentsOfDividendsCommonStock", "PaymentsOfDividends"]},
+    "StockRepurchased": {"unit": "USD", "tags": ["PaymentsForRepurchaseOfCommonStock"]},
 }
 
 _COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
@@ -44,67 +61,77 @@ _SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 _ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik_int}/{accn_nodash}/{doc}"
 
 
-def _annual_usd_entries(tag_block: dict) -> dict[int, dict]:
-    """From a us-gaap tag block, return {fiscal_year: best_entry} for FY 10-K rows.
+def _period_entries(tag_block: dict, unit: str, *, annual: bool = True) -> dict:
+    """From a us-gaap tag block, return {key: best_entry} for the requested unit.
 
-    Keeps the latest-filed entry per fiscal year (so a 10-K/A supersedes the 10-K).
+    annual=True -> key is fiscal_year for FY 10-K rows (10-K/A supersedes 10-K).
+    annual=False -> key is (fiscal_year, fp) for Q1-Q4 10-Q rows.
+    Latest-filed wins per key.
     """
-    units = (tag_block or {}).get("units", {})
-    rows = units.get("USD", [])
-    best: dict[int, dict] = {}
+    rows = (tag_block or {}).get("units", {}).get(unit, [])
+    best: dict = {}
     for row in rows:
-        if row.get("fp") != "FY":
-            continue
+        fp = row.get("fp")
         form = str(row.get("form", ""))
-        if not form.startswith("10-K"):  # includes "10-K" and "10-K/A"
+        if annual:
+            if fp != "FY" or not form.startswith("10-K"):
+                continue
+            key = row.get("fy")
+        else:
+            if fp not in ("Q1", "Q2", "Q3", "Q4") or not form.startswith("10-Q"):
+                continue
+            key = (row.get("fy"), fp)
+        bad_key = key is None or (isinstance(key, tuple) and key[0] is None)
+        if bad_key or row.get("val") is None:
             continue
-        fy = row.get("fy")
-        if fy is None or row.get("val") is None:
-            continue
-        prev = best.get(fy)
+        prev = best.get(key)
         if prev is None or str(row.get("filed", "")) > str(prev.get("filed", "")):
-            best[fy] = row
+            best[key] = row
     return best
 
 
-def _parse_companyfacts(raw: dict, *, max_years: int = 4) -> Fundamentals:
+def _parse_companyfacts(raw: dict, *, max_years: int = 4, max_quarters: int = 8) -> Fundamentals:
     """Parse a companyfacts JSON into multi-year as-reported Fundamentals."""
     cik = raw.get("cik")
     url = _COMPANYFACTS_URL.format(cik=f"{int(cik):010d}") if cik is not None else None
     gaap = (raw.get("facts", {}) or {}).get("us-gaap", {})
     # NOTE: first-present-tag-wins — if a filer switched XBRL tags mid-history,
     # years reported only under a non-selected alias are omitted. Fine for the
-    # recent `max_years` window we surface.
+    # recent window we surface.
 
     facts: list[FinancialFact] = []
-    for canonical, tags in EDGAR_CONCEPTS.items():
+    for canonical, spec in EDGAR_CONCEPTS.items():
+        unit = spec["unit"]
         block = None
-        for tag in tags:
+        for tag in spec["tags"]:
             if tag in gaap:
                 block = gaap[tag]
                 break
         if block is None:
             continue
-        annual = _annual_usd_entries(block)
+        annual = _period_entries(block, unit, annual=True)
         for fy in sorted(annual.keys(), reverse=True)[:max_years]:
-            row = annual[fy]
-            try:
-                value = float(row["val"])
-                filed = row.get("filed")
-                as_of = date.fromisoformat(filed) if filed else None
-            except (TypeError, ValueError) as exc:
-                logger.warning("skipping malformed EDGAR row for %s FY%s: %s", canonical, fy, exc)
-                continue
-            facts.append(
-                FinancialFact(
-                    concept=canonical,
-                    value=value,
-                    unit="USD",
-                    fiscal_period=f"FY{fy}",
-                    provenance=Provenance(source="SEC EDGAR", source_url=url, as_of=as_of),
-                )
-            )
+            _append_fact(facts, canonical, unit, f"FY{fy}", annual[fy], url)
     return Fundamentals(facts=facts)
+
+
+def _append_fact(facts: list, concept: str, unit: str, fiscal_period: str, row: dict, url) -> None:
+    try:
+        value = float(row["val"])
+        filed = row.get("filed")
+        as_of = date.fromisoformat(filed) if filed else None
+    except (TypeError, ValueError) as exc:
+        logger.warning("skipping malformed EDGAR row for %s %s: %s", concept, fiscal_period, exc)
+        return
+    facts.append(
+        FinancialFact(
+            concept=concept,
+            value=value,
+            unit=unit,
+            fiscal_period=fiscal_period,
+            provenance=Provenance(source="SEC EDGAR", source_url=url, as_of=as_of),
+        )
+    )
 
 
 _EXCERPT_CHARS = 4000
