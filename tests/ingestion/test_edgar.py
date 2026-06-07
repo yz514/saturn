@@ -48,12 +48,7 @@ def test_annual_entries_included_and_non_annual_non_quarterly_excluded():
     f = _parse_companyfacts(_companyfacts())
     # Annual facts still present
     assert any(x.fiscal_period == "FY2024" and x.concept == "Revenues" for x in f.facts)
-    # Q3 FY2024 row (val=18120000000) should not appear — it is outside max_quarters=8 window
-    # given the two FY2025 quarterly rows are more recent; but more importantly the raw Q3/FY2024
-    # row IS a valid 10-Q row so it may appear; assert the 18120000000 val is absent only if
-    # it falls outside the cap. With max_quarters=8 and only 3 quarterly rows in fixture,
-    # all three would be included. So we only assert the annual rows are present.
-    assert all(x.value != 18120000000 or x.fiscal_period == "Q3 FY2024" for x in f.facts)
+    assert any(x.fiscal_period == "Q3 FY2024" and x.concept == "Revenues" for x in f.facts)
 
 
 def test_max_years_limits_history():

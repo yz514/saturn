@@ -114,15 +114,16 @@ def _parse_companyfacts(raw: dict, *, max_years: int = 4, max_quarters: int = 8)
             _append_fact(facts, canonical, unit, f"FY{fy}", annual[fy], url)
 
         quarterly = _period_entries(block, unit, annual=False)
-
-        def _qkey(k):
-            fy, fp = k
-            return (fy, int(fp[1]))
-
-        for key in sorted(quarterly.keys(), key=_qkey, reverse=True)[:max_quarters]:
+        for key in sorted(quarterly.keys(), key=_quarter_sort_key, reverse=True)[:max_quarters]:
             fy, fp = key
             _append_fact(facts, canonical, unit, f"{fp} FY{fy}", quarterly[key], url)
     return Fundamentals(facts=facts)
+
+
+def _quarter_sort_key(key: tuple) -> tuple:
+    """Sort key for (fiscal_year, fp) quarter keys: by year then quarter number."""
+    fy, fp = key
+    return (fy, int(fp[1]))
 
 
 def _append_fact(facts: list, concept: str, unit: str, fiscal_period: str, row: dict, url) -> None:
