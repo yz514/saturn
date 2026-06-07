@@ -39,7 +39,7 @@ def test_latest_filing_wins_for_duplicate_year():
 
 def test_facts_carry_usd_unit_and_edgar_provenance():
     f = _parse_companyfacts(_companyfacts())
-    fact = f.facts[0]
+    fact = next(x for x in f.facts if x.concept == "Revenues")
     assert fact.unit == "USD"
     assert fact.provenance.source == "SEC EDGAR"
 
