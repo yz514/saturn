@@ -85,6 +85,42 @@ def test_render_shows_data_gaps_section():
     assert "**edgar**: edgar adapter not configured" in md
 
 
+def test_financial_table_is_bounded_per_concept():
+    """The human report table shows only the most recent few periods per concept,
+    not the full multi-year history the dossier holds."""
+    from saturn.models import (
+        CompanyDossier,
+        FinancialFact,
+        Fundamentals,
+        Provenance,
+    )
+
+    prov = Provenance(source="SEC EDGAR")
+    facts = []
+    for fy in range(2018, 2026):  # 8 annual years
+        facts.append(FinancialFact(concept="Revenues", value=float(fy), unit="USD", fiscal_period=f"FY{fy}", provenance=prov))
+    for i in range(1, 7):  # 6 quarters across FY2024/FY2025
+        q = ((i - 1) % 4) + 1
+        fy = 2024 if i <= 4 else 2025
+        facts.append(FinancialFact(concept="Revenues", value=float(i), unit="USD", fiscal_period=f"Q{q} FY{fy}", provenance=prov))
+    dossier = CompanyDossier(
+        ticker="NVDA", name="NVIDIA", fundamentals=Fundamentals(facts=facts), generated_at=date(2026, 6, 7)
+    )
+
+    report = _sample_report()
+    report.company = dossier
+    md = render(report)
+
+    # most-recent annual + quarterly kept
+    assert "FY2025" in md and "FY2024" in md and "FY2023" in md
+    assert "Q2 FY2025" in md and "Q3 FY2024" in md
+    # older periods dropped from the human table
+    assert "FY2018" not in md and "FY2019" not in md
+    assert "Q1 FY2024" not in md and "Q2 FY2024" not in md
+    # transparency note about the bound (no silent truncation)
+    assert "most recent" in md.lower()
+
+
 def test_render_groups_financials_and_shows_events():
     md = render(_sample_report())  # uses _mock_dossier, has a quarterly fact + event
     assert "Q2 FY2025" in md                                   # quarterly row present

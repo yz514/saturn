@@ -92,9 +92,22 @@ def _period_entries(tag_block: dict, unit: str, *, annual: bool = True) -> dict:
         if bad_key or row.get("val") is None:
             continue
         prev = best.get(key)
-        if prev is None or str(row.get("filed", "")) > str(prev.get("filed", "")):
+        if prev is None or _row_rank(row) > _row_rank(prev):
             best[key] = row
     return best
+
+
+def _row_rank(row: dict) -> tuple[str, str]:
+    """Rank companyfacts rows that share a period key. Prefer the latest period
+    end date, then the latest filed date.
+
+    The end-date tie-break matters for *instant* balance-sheet concepts (Assets,
+    Liabilities, StockholdersEquity, ...): a 10-Q/10-K carries the current period
+    end AND a prior-period comparative under the same (fy, fp), so without this the
+    comparative could win and a stale year-end value would repeat across quarters.
+    The filed-date tie-break preserves latest-filed-wins (e.g. 10-K/A supersedes 10-K)
+    when two rows share the same period end."""
+    return (str(row.get("end", "")), str(row.get("filed", "")))
 
 
 def _parse_companyfacts(raw: dict, *, max_years: int = 4, max_quarters: int = 8) -> Fundamentals:

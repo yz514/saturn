@@ -9,9 +9,54 @@ _DISCLAIMER = (
     "and is not investment advice.*"
 )
 
+# Per-concept caps for the human-facing financials table. The dossier keeps the
+# full history; this only bounds what the markdown report renders for readability.
+_RPT_MAX_ANNUAL = 3
+_RPT_MAX_QUARTERS = 4
+
 
 def _fmt_money(value: float | None) -> str:
     return f"${value:,.0f}" if value is not None else "N/A"
+
+
+def _annual_sort_key(period: str) -> int:
+    """'FY2024' -> 2024; non-FY periods sort last."""
+    try:
+        return int((period or "").replace("FY", "").strip())
+    except (ValueError, AttributeError):
+        return -1
+
+
+def _quarter_sort_key(period: str) -> tuple[int, int]:
+    """'Q2 FY2025' -> (2025, 2); unparseable sorts last."""
+    try:
+        q_part, fy_part = period.split()
+        return (int(fy_part.replace("FY", "")), int(q_part[1]))
+    except (ValueError, AttributeError, IndexError):
+        return (-1, -1)
+
+
+def _select_report_facts(facts: list) -> list:
+    """Per concept, keep the most-recent annual and quarterly periods for the
+    table, preserving the dossier's concept ordering (annual block then quarterly)."""
+    by_concept: dict[str, list] = {}
+    order: list[str] = []
+    for f in facts:
+        if f.concept not in by_concept:
+            by_concept[f.concept] = []
+            order.append(f.concept)
+        by_concept[f.concept].append(f)
+    annual_out: list = []
+    quarterly_out: list = []
+    for concept in order:
+        items = by_concept[concept]
+        annual = [x for x in items if not (x.fiscal_period or "").startswith("Q")]
+        quarterly = [x for x in items if (x.fiscal_period or "").startswith("Q")]
+        annual.sort(key=lambda x: _annual_sort_key(x.fiscal_period), reverse=True)
+        quarterly.sort(key=lambda x: _quarter_sort_key(x.fiscal_period), reverse=True)
+        annual_out.extend(annual[:_RPT_MAX_ANNUAL])
+        quarterly_out.extend(quarterly[:_RPT_MAX_QUARTERS])
+    return annual_out + quarterly_out
 
 
 def render(report: ResearchReport) -> str:
@@ -47,9 +92,7 @@ def render(report: ResearchReport) -> str:
     if c.fundamentals and c.fundamentals.facts:
         out.append("| Concept | Period | Value | Unit | Source |")
         out.append("| --- | --- | --- | --- | --- |")
-        _annual = [x for x in c.fundamentals.facts if not (x.fiscal_period or "").startswith("Q")]
-        _quarterly = [x for x in c.fundamentals.facts if (x.fiscal_period or "").startswith("Q")]
-        for fact in _annual + _quarterly:
+        for fact in _select_report_facts(c.fundamentals.facts):
             val = _fmt_money(fact.value) if (fact.unit or "").upper() == "USD" else (
                 fact.value if fact.value is not None else "N/A"
             )
@@ -57,6 +100,11 @@ def render(report: ResearchReport) -> str:
                 f"| {fact.concept} | {fact.fiscal_period or 'N/A'} | {val} "
                 f"| {fact.unit or ''} | {fact.provenance.source} |"
             )
+        out.append("")
+        out.append(
+            f"_Showing the most recent {_RPT_MAX_ANNUAL} annual and "
+            f"{_RPT_MAX_QUARTERS} quarterly periods per concept._"
+        )
         out.append("")
     out += [a.financial_snapshot, ""]
 
