@@ -19,6 +19,8 @@ _SECTION_SPECS = [
         r"item\s*7\.?\s+management",
         [r"item\s*7a\b", r"item\s*8\b"],
     ),
+    # 10-Q MD&A is Part I, Item 2 (vs Item 7 in a 10-K). Same canonical name.
+    ("Management Discussion & Analysis", r"item\s*2\.?\s+management", [r"item\s*3\b", r"item\s*4\b"]),
 ]
 
 

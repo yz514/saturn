@@ -180,13 +180,13 @@ def _fetch_filing_html(cik: str, accession: str, doc: str) -> str:
 
 def _cache_full_text(cik: str, name: str, text: str) -> str:
     """Persist a section's full text and return a cache reference string."""
-    key = f"{cik}_10k_{name.lower().replace(' ', '_').replace('&', 'and')}"
+    key = f"{cik}_{name.lower().replace(' ', '_').replace('&', 'and')}"
     path = write_cache("edgar_sections", key, {"text": text}, today=date.today())
     return str(path)
 
 
 def fetch_edgar(ticker: str) -> dict:
-    """Return {"fundamentals", "filing_sections", "name", "cik"} for `ticker`.
+    """Return {"fundamentals", "filing_sections", "material_events", "name", "cik"} for `ticker`.
 
     Raises DataUnavailable if the ticker has no CIK or SEC_USER_AGENT is unset;
     SourceFailure on transport errors (both recorded as a gap by the dispatcher).
@@ -207,7 +207,7 @@ def fetch_edgar(ticker: str) -> dict:
         as_of = date.fromisoformat(sel["filing_date"]) if sel.get("filing_date") else None
         html = _fetch_filing_html(cik, sel["accession"], sel["primary_document"])
         for sec in _extract_filing_sections(html):
-            ref = _cache_full_text(cik, sec["name"], sec["text"])
+            ref = _cache_full_text(cik, f"10k_{sec['name']}", sec["text"])
             filing_sections.append(
                 FilingSection(
                     name=sec["name"],
@@ -246,7 +246,13 @@ def fetch_edgar(ticker: str) -> dict:
             cik_int=int(cik), accn_nodash=e["accession"].replace("-", ""), doc=e["primary_document"]
         )
         codes = e["item_codes"]
-        title = next((EIGHT_K_ITEM_LABELS.get(c) for c in codes if c in EIGHT_K_ITEM_LABELS), None)
+        title = next(
+            (EIGHT_K_ITEM_LABELS[c] for c in codes if c in HIGH_VALUE_8K_ITEMS),
+            None,
+        ) or next(
+            (EIGHT_K_ITEM_LABELS.get(c) for c in codes if c in EIGHT_K_ITEM_LABELS),
+            None,
+        )
         excerpt = cache_ref = None
         if any(c in HIGH_VALUE_8K_ITEMS for c in codes):
             body = _extract_8k(_fetch_filing_html(cik, e["accession"], e["primary_document"]))

@@ -149,13 +149,18 @@ def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
     sub = _submissions()  # has a 10-Q and two 8-Ks
     tenk = (FIX / "tenk_excerpt.html").read_text(encoding="utf-8")
     eightk = (FIX / "eightk_excerpt.html").read_text(encoding="utf-8")
+    tenq = (FIX / "tenq_excerpt.html").read_text(encoding="utf-8")
 
     monkeypatch.setattr("saturn.ingestion.edgar.ticker_to_cik", lambda t: "0001045810")
     monkeypatch.setattr("saturn.ingestion.edgar._fetch_companyfacts", lambda cik: cf)
     monkeypatch.setattr("saturn.ingestion.edgar._fetch_submissions", lambda cik: sub)
 
     def fake_html(cik, accn, doc):
-        return eightk if doc.startswith("ev-") else tenk
+        if doc.startswith("ev-"):
+            return eightk
+        if doc == "nvda-20240428.htm":   # the 10-Q primary document
+            return tenq
+        return tenk
 
     monkeypatch.setattr("saturn.ingestion.edgar._fetch_filing_html", fake_html)
     monkeypatch.setattr("saturn.ingestion.edgar._cache_full_text", lambda *a, **k: "cache://ref")

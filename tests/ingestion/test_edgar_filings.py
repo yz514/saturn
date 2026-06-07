@@ -114,3 +114,11 @@ def test_extract_8k_returns_body_text():
 def test_high_value_set_and_labels():
     assert "2.02" in HIGH_VALUE_8K_ITEMS
     assert EIGHT_K_ITEM_LABELS["2.02"].lower().startswith("results")
+
+
+def test_extract_filing_sections_finds_10q_item2_mdna():
+    html = (FIX / "tenq_excerpt.html").read_text(encoding="utf-8")
+    sections = _extract_filing_sections(html)
+    mdna = next((s for s in sections if s["name"] == "Management Discussion & Analysis"), None)
+    assert mdna is not None
+    assert "Revenue for the quarter rose" in mdna["text"]
