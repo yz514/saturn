@@ -92,22 +92,54 @@ def _period_entries(tag_block: dict, unit: str, *, annual: bool = True) -> dict:
         if bad_key or row.get("val") is None:
             continue
         prev = best.get(key)
-        if prev is None or _row_rank(row) > _row_rank(prev):
+        if prev is None or _row_rank(row, annual=annual) > _row_rank(prev, annual=annual):
             best[key] = row
+    if not annual:
+        # Drop cumulative YTD durations (cash-flow items are reported YTD-only in
+        # 10-Qs): we won't present a 6/9-month figure as a single quarter. Instant
+        # balance-sheet rows (no `start`) and genuine ~3-month rows are kept.
+        best = {k: r for k, r in best.items() if _is_single_quarter_or_instant(r)}
     return best
 
 
-def _row_rank(row: dict) -> tuple[str, str]:
-    """Rank companyfacts rows that share a period key. Prefer the latest period
-    end date, then the latest filed date.
+def _is_single_quarter_or_instant(row: dict) -> bool:
+    """True for instant balance-sheet rows (no `start`) and ~3-month duration rows;
+    False for cumulative YTD (6/9-month) durations."""
+    span = _span_days(row)
+    return span is None or 80 <= span <= 100
 
-    The end-date tie-break matters for *instant* balance-sheet concepts (Assets,
-    Liabilities, StockholdersEquity, ...): a 10-Q/10-K carries the current period
-    end AND a prior-period comparative under the same (fy, fp), so without this the
-    comparative could win and a stale year-end value would repeat across quarters.
-    The filed-date tie-break preserves latest-filed-wins (e.g. 10-K/A supersedes 10-K)
+
+def _span_days(row: dict) -> int | None:
+    """Length in days of a duration row's start->end period, or None for instant
+    rows (no `start`) or unparseable dates."""
+    start, end = row.get("start"), row.get("end")
+    if not start or not end:
+        return None
+    try:
+        return (date.fromisoformat(str(end)) - date.fromisoformat(str(start))).days
+    except (TypeError, ValueError):
+        return None
+
+
+def _row_rank(row: dict, *, annual: bool) -> tuple[int, str, str]:
+    """Rank companyfacts rows that share a period key; the max wins.
+
+    For *quarterly* flow concepts a 10-Q tags both a ~3-month and a year-to-date
+    duration under the same (fy, fp) with the same `end`; prefer the single-quarter
+    (~3-month) span so cumulative YTD values don't masquerade as one quarter.
+
+    The end-date component handles *instant* balance-sheet concepts: a filing
+    carries the current period end AND a prior-period comparative under the same
+    (fy, fp), so without it a stale year-end value would repeat across quarters.
+    The filed-date component preserves latest-filed-wins (10-K/A supersedes 10-K)
     when two rows share the same period end."""
-    return (str(row.get("end", "")), str(row.get("filed", "")))
+    end = str(row.get("end", ""))
+    filed = str(row.get("filed", ""))
+    if annual:
+        return (0, end, filed)
+    span = _span_days(row)
+    is_quarter = 1 if (span is not None and 80 <= span <= 100) else 0
+    return (is_quarter, end, filed)
 
 
 def _parse_companyfacts(raw: dict, *, max_years: int = 4, max_quarters: int = 8) -> Fundamentals:

@@ -175,6 +175,39 @@ def test_instant_concept_annual_picks_year_end_not_comparative():
     assert fy.value == 1000
 
 
+def test_quarterly_flow_picks_three_month_not_ytd():
+    """A 10-Q tags each flow concept with both a 3-month and a year-to-date
+    duration sharing (fy, fp) and the same `end`. Keep the single-quarter value."""
+    payload = {
+        "cik": 1045810,
+        "facts": {"us-gaap": {"RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [
+            # YTD (6-month) cumulative, listed FIRST
+            {"start": "2024-12-01", "end": "2025-05-31", "val": 250, "fy": 2025, "fp": "Q2", "form": "10-Q", "filed": "2025-06-20"},
+            # the single-quarter (3-month) value we want
+            {"start": "2025-03-01", "end": "2025-05-31", "val": 100, "fy": 2025, "fp": "Q2", "form": "10-Q", "filed": "2025-06-20"},
+        ]}}}},
+    }
+    f = _parse_companyfacts(payload)
+    q2 = next(x for x in f.facts if x.concept == "Revenues" and x.fiscal_period == "Q2 FY2025")
+    assert q2.value == 100  # 3-month, not the 250 YTD cumulative
+
+
+def test_quarterly_ytd_only_flow_is_dropped_not_mislabeled():
+    """Cash-flow items are reported YTD-only in 10-Qs. Rather than present a
+    cumulative 6/9-month figure as a single quarter, we omit the quarterly fact
+    (the annual figure still flows through). This avoids double-counting."""
+    payload = {
+        "cik": 1045810,
+        "facts": {"us-gaap": {"NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+            # only a YTD (6-month) duration exists for this quarter
+            {"start": "2024-12-01", "end": "2025-05-31", "val": 250, "fy": 2025, "fp": "Q2", "form": "10-Q", "filed": "2025-06-20"},
+        ]}}}},
+    }
+    f = _parse_companyfacts(payload)
+    q = [x for x in f.facts if x.concept == "OperatingCashFlow" and (x.fiscal_period or "").startswith("Q")]
+    assert q == []  # YTD-only quarterly row dropped, not mislabeled as a single quarter
+
+
 def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
     from datetime import date as _date
 
