@@ -7,6 +7,7 @@ fetchers live in edgar.py and call these.
 from __future__ import annotations
 
 import re
+from datetime import date
 from html import unescape
 
 # (name, start-marker regex, list of end-marker regexes) for targeted 10-K/10-Q items.
@@ -56,6 +57,66 @@ def _extract_filing_sections(html: str) -> list[dict]:
         if body:
             out.append({"name": name, "text": body})
     return out
+
+
+EIGHT_K_ITEM_LABELS: dict[str, str] = {
+    "1.01": "Entry into a Material Definitive Agreement",
+    "1.02": "Termination of a Material Definitive Agreement",
+    "2.01": "Completion of Acquisition or Disposition of Assets",
+    "2.02": "Results of Operations and Financial Condition",
+    "5.02": "Departure/Election of Directors or Officers",
+    "7.01": "Regulation FD Disclosure",
+    "8.01": "Other Events",
+    "9.01": "Financial Statements and Exhibits",
+}
+
+HIGH_VALUE_8K_ITEMS = {"1.01", "2.01", "2.02", "5.02", "7.01", "8.01"}
+
+
+def _parse_8k_items(items_field: str) -> list[str]:
+    """Split SEC's comma-separated 8-K `items` string into item codes."""
+    if not items_field:
+        return []
+    return [s.strip() for s in items_field.split(",") if s.strip()]
+
+
+def _select_recent_8ks(submissions: dict, *, since: date) -> list[dict]:
+    """Return recent 8-K entries filed on/after `since`, newest first.
+
+    Each entry: {form, accession, primary_document, filing_date, item_codes}.
+    """
+    recent = (submissions.get("filings", {}) or {}).get("recent", {})
+    forms = recent.get("form", [])
+    accns = recent.get("accessionNumber", [])
+    docs = recent.get("primaryDocument", [])
+    filed = recent.get("filingDate", [])
+    items = recent.get("items", [])
+    out: list[dict] = []
+    for i, f in enumerate(forms):
+        if f != "8-K" or i >= len(accns):
+            continue
+        fdate = filed[i] if i < len(filed) else ""
+        try:
+            if not fdate or date.fromisoformat(fdate) < since:
+                continue
+        except ValueError:
+            continue
+        out.append(
+            {
+                "form": "8-K",
+                "accession": accns[i],
+                "primary_document": docs[i] if i < len(docs) else "",
+                "filing_date": fdate,
+                "item_codes": _parse_8k_items(items[i] if i < len(items) else ""),
+            }
+        )
+    out.sort(key=lambda e: e["filing_date"], reverse=True)
+    return out
+
+
+def _extract_8k(html: str) -> str:
+    """Best-effort plain-text body of an 8-K (whole document, stripped)."""
+    return _strip_html(html)
 
 
 def _select_latest(submissions: dict, form: str) -> dict | None:

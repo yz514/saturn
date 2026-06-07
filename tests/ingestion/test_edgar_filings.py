@@ -1,9 +1,15 @@
 import json
+from datetime import date
 from pathlib import Path
 
 from saturn.ingestion.edgar_filings import (
+    EIGHT_K_ITEM_LABELS,
+    HIGH_VALUE_8K_ITEMS,
+    _extract_8k,
     _extract_filing_sections,
+    _parse_8k_items,
     _select_latest,
+    _select_recent_8ks,
     _strip_html,
 )
 
@@ -59,3 +65,36 @@ def test_select_latest_picks_most_recent_for_form():
 def test_select_latest_returns_none_when_absent():
     empty = {"filings": {"recent": {"accessionNumber": [], "form": [], "filingDate": [], "primaryDocument": []}}}
     assert _select_latest(empty, "10-K") is None
+
+
+def _eightk_html():
+    return (FIX / "eightk_excerpt.html").read_text(encoding="utf-8")
+
+
+def test_parse_8k_items_splits_comma_string():
+    assert _parse_8k_items("2.02,9.01") == ["2.02", "9.01"]
+    assert _parse_8k_items(" 5.02 ") == ["5.02"]
+    assert _parse_8k_items("") == []
+
+
+def test_select_recent_8ks_filters_by_window():
+    subs = _submissions()
+    recent = _select_recent_8ks(subs, since=date(2024, 1, 1))
+    accns = {e["accession"] for e in recent}
+    assert "0001045810-24-000200" in accns       # 2024-05-22 8-K kept
+    assert "0001045810-24-000201" not in accns    # 2023-03-15 8-K excluded
+    assert all(e["form"] == "8-K" for e in recent)
+    ev = next(e for e in recent if e["accession"] == "0001045810-24-000200")
+    assert ev["item_codes"] == ["2.02", "9.01"]
+    assert ev["filing_date"] == "2024-05-22"
+
+
+def test_extract_8k_returns_body_text():
+    text = _extract_8k(_eightk_html())
+    assert "record quarterly revenue" in text
+    assert "<" not in text
+
+
+def test_high_value_set_and_labels():
+    assert "2.02" in HIGH_VALUE_8K_ITEMS
+    assert EIGHT_K_ITEM_LABELS["2.02"].lower().startswith("results")
