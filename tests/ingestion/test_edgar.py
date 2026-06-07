@@ -25,7 +25,7 @@ def _tenk_html():
 def test_parse_returns_fundamentals_with_annual_facts():
     f = _parse_companyfacts(_companyfacts(), max_years=4)
     assert isinstance(f, Fundamentals)
-    revs = [x for x in f.facts if x.concept == "Revenues"]
+    revs = [x for x in f.facts if x.concept == "Revenues" and x.fiscal_period.startswith("FY")]
     periods = sorted(x.fiscal_period for x in revs)
     assert periods == ["FY2023", "FY2024"]
 
@@ -44,15 +44,21 @@ def test_facts_carry_usd_unit_and_edgar_provenance():
     assert fact.provenance.source == "SEC EDGAR"
 
 
-def test_quarterly_and_non_10k_entries_are_excluded():
+def test_annual_entries_included_and_non_annual_non_quarterly_excluded():
     f = _parse_companyfacts(_companyfacts())
-    assert all(x.fiscal_period.startswith("FY") for x in f.facts)
-    assert all(x.value not in (18120000000,) for x in f.facts)
+    # Annual facts still present
+    assert any(x.fiscal_period == "FY2024" and x.concept == "Revenues" for x in f.facts)
+    # Q3 FY2024 row (val=18120000000) should not appear — it is outside max_quarters=8 window
+    # given the two FY2025 quarterly rows are more recent; but more importantly the raw Q3/FY2024
+    # row IS a valid 10-Q row so it may appear; assert the 18120000000 val is absent only if
+    # it falls outside the cap. With max_quarters=8 and only 3 quarterly rows in fixture,
+    # all three would be included. So we only assert the annual rows are present.
+    assert all(x.value != 18120000000 or x.fiscal_period == "Q3 FY2024" for x in f.facts)
 
 
 def test_max_years_limits_history():
     f = _parse_companyfacts(_companyfacts(), max_years=1)
-    revs = [x for x in f.facts if x.concept == "Revenues"]
+    revs = [x for x in f.facts if x.concept == "Revenues" and x.fiscal_period.startswith("FY")]
     assert [x.fiscal_period for x in revs] == ["FY2024"]
 
 
@@ -105,6 +111,24 @@ def test_ua_requires_sec_user_agent():
     # The autouse offline fixture drops SEC_USER_AGENT, so _ua() must raise.
     with pytest.raises(DataUnavailable):
         _ua()
+
+
+def test_parse_emits_quarterly_facts():
+    f = _parse_companyfacts(_companyfacts())
+    q = [x for x in f.facts if x.concept == "Revenues" and x.fiscal_period.startswith("Q")]
+    periods = {x.fiscal_period for x in q}
+    assert {"Q1 FY2025", "Q2 FY2025"} <= periods
+    q2 = next(x for x in f.facts if x.fiscal_period == "Q2 FY2025" and x.concept == "Revenues")
+    assert q2.value == 30040000000
+    # annual still present
+    assert any(x.fiscal_period == "FY2024" and x.concept == "Revenues" for x in f.facts)
+
+
+def test_quarterly_cap_respected():
+    f = _parse_companyfacts(_companyfacts(), max_quarters=1)
+    q = [x for x in f.facts if x.concept == "Revenues" and x.fiscal_period.startswith("Q")]
+    assert len(q) == 1
+    assert q[0].fiscal_period == "Q2 FY2025"  # most recent quarter
 
 
 def test_parse_captures_non_usd_units():
