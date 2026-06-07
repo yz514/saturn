@@ -34,6 +34,46 @@ DEBATE_SYSTEM = (
 
 _MAX_OUTPUT_TOKENS = 4096
 
+_CTX_MAX_ANNUAL = 3
+_CTX_MAX_QUARTERS = 4
+_CTX_SECTION_CHARS = 1200
+_CTX_MAX_EVENTS = 6
+_CTX_EVENT_CHARS = 500
+
+
+def _fy_num(period: str) -> int:
+    """'FY2024' -> 2024; unparseable -> -1."""
+    try:
+        return int((period or "").replace("FY", "").strip())
+    except (ValueError, AttributeError):
+        return -1
+
+
+def _q_sort(period: str) -> tuple[int, int]:
+    """'Q2 FY2025' -> (2025, 2); unparseable -> (-1, -1)."""
+    try:
+        q_part, fy_part = period.split()
+        return (int(fy_part.replace("FY", "")), int(q_part[1]))
+    except (ValueError, AttributeError, IndexError):
+        return (-1, -1)
+
+
+def _select_context_facts(facts: list) -> list:
+    """Per concept, keep the most-recent _CTX_MAX_ANNUAL annual + _CTX_MAX_QUARTERS
+    quarterly facts (prompt budget control; the dossier keeps the full set)."""
+    by_concept: dict[str, list] = {}
+    for f in facts:
+        by_concept.setdefault(f.concept, []).append(f)
+    out: list = []
+    for items in by_concept.values():
+        annual = [x for x in items if (x.fiscal_period or "").startswith("FY")]
+        quarterly = [x for x in items if (x.fiscal_period or "").startswith("Q")]
+        annual.sort(key=lambda x: _fy_num(x.fiscal_period), reverse=True)
+        quarterly.sort(key=lambda x: _q_sort(x.fiscal_period), reverse=True)
+        out.extend(annual[:_CTX_MAX_ANNUAL])
+        out.extend(quarterly[:_CTX_MAX_QUARTERS])
+    return out
+
 
 def _company_context(dossier: CompanyDossier) -> str:
     """Render the dossier as provenance-tagged text the agents can cite."""
@@ -58,7 +98,7 @@ def _company_context(dossier: CompanyDossier) -> str:
 
     if dossier.fundamentals and dossier.fundamentals.facts:
         lines.append("\nFUNDAMENTALS (as-reported):")
-        for fact in dossier.fundamentals.facts:
+        for fact in _select_context_facts(dossier.fundamentals.facts):
             cite = fact.provenance.source
             if fact.provenance.as_of:
                 cite += f", as of {fact.provenance.as_of}"
@@ -70,15 +110,17 @@ def _company_context(dossier: CompanyDossier) -> str:
     if dossier.filing_sections:
         lines.append("\nFILING SECTIONS:")
         for s in dossier.filing_sections:
-            lines.append(f"- {s.name} (source: {s.provenance.source}): {s.excerpt}")
+            excerpt = (s.excerpt or "")[:_CTX_SECTION_CHARS]
+            lines.append(f"- {s.name} (source: {s.provenance.source}): {excerpt}")
 
     if dossier.material_events:
         lines.append("\nMATERIAL EVENTS (SEC 8-K):")
-        for ev in dossier.material_events:
+        recent = sorted(dossier.material_events, key=lambda e: e.filing_date, reverse=True)
+        for ev in recent[:_CTX_MAX_EVENTS]:
             label = ev.title or ", ".join(ev.item_codes) or "8-K"
             lines.append(f"- {ev.filing_date}: {label} (source: {ev.provenance.source})")
             if ev.excerpt:
-                lines.append(f"  {ev.excerpt}")
+                lines.append(f"  {ev.excerpt[:_CTX_EVENT_CHARS]}")
 
     if dossier.macro and dossier.macro.series:
         lines.append("\nMACRO:")

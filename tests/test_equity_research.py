@@ -95,3 +95,64 @@ def test_debate_requests_max_output_tokens():
     client = _CapturingClient()
     debate(_mock_dossier("NVDA"), client)
     assert client.calls == [_MAX_OUTPUT_TOKENS]
+
+
+from datetime import date
+
+from saturn.models import (
+    CompanyDossier,
+    FilingSection,
+    FinancialFact,
+    Fundamentals,
+    MaterialEvent,
+    Provenance,
+)
+from saturn.workflows.equity_research import (
+    _CTX_MAX_ANNUAL,
+    _CTX_MAX_EVENTS,
+    _CTX_SECTION_CHARS,
+    _company_context,
+)
+
+
+def _big_dossier() -> CompanyDossier:
+    prov = Provenance(source="SEC EDGAR")
+    facts = []
+    for fy in range(2019, 2026):  # 7 annual years of Revenues
+        facts.append(FinancialFact(concept="Revenues", value=float(fy), unit="USD", fiscal_period=f"FY{fy}", provenance=prov))
+    for i in range(1, 7):  # 6 quarters across FY2024/FY2025
+        q = ((i - 1) % 4) + 1
+        fy = 2024 if i <= 4 else 2025
+        facts.append(FinancialFact(concept="Revenues", value=float(i), unit="USD", fiscal_period=f"Q{q} FY{fy}", provenance=prov))
+    events = [
+        MaterialEvent(filing_date=date(2025, m, 1), item_codes=["2.02"], title=f"Event {m}", excerpt="E" * 2000, provenance=prov)
+        for m in range(1, 11)  # 10 events
+    ]
+    return CompanyDossier(
+        ticker="NVDA",
+        name="NVIDIA",
+        fundamentals=Fundamentals(facts=facts),
+        filing_sections=[FilingSection(name="Risk Factors", excerpt="R" * 5000, provenance=prov)],
+        material_events=events,
+        generated_at=date(2026, 6, 6),
+    )
+
+
+def test_context_caps_annual_facts():
+    ctx = _company_context(_big_dossier())
+    assert "FY2025" in ctx and "FY2024" in ctx and "FY2023" in ctx
+    assert "FY2019" not in ctx and "FY2020" not in ctx
+    assert _CTX_MAX_ANNUAL == 3
+
+
+def test_context_trims_section_excerpt():
+    ctx = _company_context(_big_dossier())
+    run_of_r = max((len(s) for s in ctx.split() if set(s) == {"R"}), default=0)
+    assert run_of_r <= _CTX_SECTION_CHARS
+
+
+def test_context_caps_events():
+    ctx = _company_context(_big_dossier())
+    assert ctx.count("MATERIAL EVENTS") == 1
+    event_lines = [ln for ln in ctx.splitlines() if ln.startswith("- ") and "Event " in ln]
+    assert len(event_lines) <= _CTX_MAX_EVENTS
