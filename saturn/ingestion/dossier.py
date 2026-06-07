@@ -13,7 +13,9 @@ from datetime import date
 from typing import Callable
 
 from saturn.ingestion.dispatch import route_to_source
+from saturn.ingestion.edgar import fetch_edgar
 from saturn.ingestion.errors import DataUnavailable
+from saturn.ingestion.fred import fetch_fred
 from saturn.ingestion.prices import fetch_quote
 from saturn.models import (
     CompanyDossier,
@@ -81,8 +83,8 @@ def build_dossier(
     *,
     mock: bool = False,
     quote_fn: Callable[..., Quote] = fetch_quote,
-    edgar_fn: Callable[..., object] | None = None,
-    fred_fn: Callable[..., object] | None = None,
+    edgar_fn: Callable[..., object] | None = fetch_edgar,
+    fred_fn: Callable[..., object] | None = fetch_fred,
     identity: dict | None = None,
 ) -> CompanyDossier:
     """Build a CompanyDossier. mock=True returns the offline fixture.
@@ -127,9 +129,12 @@ def build_dossier(
         gaps.append(gap)
 
     fundamentals = filing_sections = None
+    edgar_name = edgar_cik = None
     if isinstance(edgar_result, dict):
         fundamentals = edgar_result.get("fundamentals")
         filing_sections = edgar_result.get("filing_sections")
+        edgar_name = edgar_result.get("name")
+        edgar_cik = edgar_result.get("cik")
     elif edgar_result is not None:
         logger.warning(
             "edgar adapter returned %s, expected dict with "
@@ -139,8 +144,8 @@ def build_dossier(
 
     return CompanyDossier(
         ticker=ticker,
-        cik=ident.get("cik"),
-        name=ident.get("name", ticker),
+        cik=ident.get("cik") or edgar_cik,
+        name=ident.get("name") or edgar_name or ticker,
         sector=ident.get("sector"),
         industry=ident.get("industry"),
         business_summary=ident.get("business_summary"),
