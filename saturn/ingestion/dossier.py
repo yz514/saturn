@@ -24,6 +24,7 @@ from saturn.models import (
     Fundamentals,
     MacroSeries,
     MacroSnapshot,
+    MaterialEvent,
     NewsItem,
     Provenance,
     Quote,
@@ -54,12 +55,22 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
                 FinancialFact(concept="Revenues", value=60_900_000_000.0, unit="USD", fiscal_period="FY2024", provenance=prov_e),
                 FinancialFact(concept="NetIncomeLoss", value=29_760_000_000.0, unit="USD", fiscal_period="FY2024", provenance=prov_e),
                 FinancialFact(concept="Revenues", value=26_970_000_000.0, unit="USD", fiscal_period="FY2023", provenance=prov_e),
+                FinancialFact(concept="Revenues", value=30_040_000_000.0, unit="USD", fiscal_period="Q2 FY2025", provenance=prov_e),
             ]
         ),
         filing_sections=[
             FilingSection(
                 name="Risk Factors",
                 excerpt="[MOCK] Demand for our products may not meet expectations; supply is concentrated.",
+                provenance=prov_e,
+            )
+        ],
+        material_events=[
+            MaterialEvent(
+                filing_date=date(2024, 5, 22),
+                item_codes=["2.02", "9.01"],
+                title="Results of Operations and Financial Condition",
+                excerpt="[MOCK] Reported record quarterly revenue.",
                 provenance=prov_e,
             )
         ],
@@ -91,8 +102,9 @@ def build_dossier(
 
     Adapter contracts:
     - quote_fn(ticker, *, mock) -> Quote
-    - edgar_fn(ticker) -> dict with keys "fundamentals" (Fundamentals) and
-      "filing_sections" (list[FilingSection])
+    - edgar_fn(ticker) -> dict with keys "fundamentals" (Fundamentals),
+      "filing_sections" (list[FilingSection]), "material_events"
+      (list[MaterialEvent]), "name", and "cik"
     - fred_fn(ticker) -> MacroSnapshot
 
     edgar_fn/fred_fn are injected by later plans; when None, the dispatcher
@@ -130,11 +142,13 @@ def build_dossier(
 
     fundamentals = filing_sections = None
     edgar_name = edgar_cik = None
+    material_events: list = []
     if isinstance(edgar_result, dict):
         fundamentals = edgar_result.get("fundamentals")
         filing_sections = edgar_result.get("filing_sections")
         edgar_name = edgar_result.get("name")
         edgar_cik = edgar_result.get("cik")
+        material_events = edgar_result.get("material_events") or []
     elif edgar_result is not None:
         logger.warning(
             "edgar adapter returned %s, expected dict with "
@@ -153,6 +167,7 @@ def build_dossier(
         quote=quote,
         fundamentals=fundamentals,
         filing_sections=filing_sections or [],
+        material_events=material_events,
         macro=fred_result if isinstance(fred_result, MacroSnapshot) else None,
         news=ident.get("news", []),
         gaps=gaps,
