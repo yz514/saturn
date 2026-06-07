@@ -7,8 +7,6 @@ non-offline command). Unit tests monkeypatch the adapters to stay offline.
 
 from __future__ import annotations
 
-import logging
-
 from pydantic import BaseModel
 
 from saturn.ingestion.edgar import fetch_edgar
@@ -16,8 +14,6 @@ from saturn.ingestion.errors import IngestionError
 from saturn.ingestion.fred import fetch_fred
 from saturn.ingestion.prices import fetch_quote
 from saturn.llm.anthropic_client import AnthropicClient
-
-logger = logging.getLogger(__name__)
 
 _PING_MODEL = "claude-haiku-4-5"  # cheapest model — this only proves the key works
 
@@ -107,7 +103,8 @@ def format_report(ticker: str, results: list[CheckResult]) -> str:
     width = max((len(r.name) for r in results), default=0)
     for r in results:
         mark = "[OK]  " if r.ok else "[FAIL]"
-        lines.append(f"{mark} {r.name.ljust(width)}  {r.detail}")
+        detail = r.detail.encode("ascii", "replace").decode("ascii")
+        lines.append(f"{mark} {r.name.ljust(width)}  {detail}")
     passed = sum(1 for r in results if r.ok)
     lines.append("")
     lines.append(f"{passed}/{len(results)} checks passed.")

@@ -160,3 +160,11 @@ def test_format_report_marks_and_summary():
     assert "1/2 checks passed." in out
     # ASCII-safe: no non-ASCII chars (Windows console)
     out.encode("ascii")
+
+
+def test_format_report_coerces_non_ascii_detail():
+    results = [CheckResult(name="SEC EDGAR", ok=False, detail="Société 日本 — boom")]
+    out = format_report("AAPL", results)
+    out.encode("ascii")  # must not raise UnicodeEncodeError
+    assert "[FAIL]" in out
+    assert "Soci" in out  # ASCII portion survives; non-ASCII replaced with '?'
