@@ -106,7 +106,8 @@ def render(report: ResearchReport) -> str:
                 head += f" — [filing]({ev.provenance.source_url})"
             out.append(head)
             if ev.excerpt:
-                out.append(f"  > {ev.excerpt}")
+                quoted = "\n  > ".join(ev.excerpt.splitlines() or [ev.excerpt])
+                out.append(f"  > {quoted}")
         out.append("")
     else:
         out.append("_No material events in the last 12 months._")

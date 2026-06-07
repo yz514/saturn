@@ -88,6 +88,7 @@ def test_render_shows_data_gaps_section():
 def test_render_groups_financials_and_shows_events():
     md = render(_sample_report())  # uses _mock_dossier, has a quarterly fact + event
     assert "Q2 FY2025" in md                                   # quarterly row present
+    assert md.index("FY2024") < md.index("Q2 FY2025")  # annual grouped before quarterly
     assert "## 14. Material Events (SEC 8-K)" in md            # new section
     assert "Results of Operations and Financial Condition" in md
     assert "## 15. Sources" in md                              # renumbered
