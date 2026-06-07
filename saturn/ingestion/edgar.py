@@ -153,7 +153,7 @@ def _append_fact(facts: list, concept: str, unit: str, fiscal_period: str, row: 
 
 
 _EXCERPT_CHARS = 4000
-_EIGHT_K_WINDOW_DAYS = 800
+_EIGHT_K_WINDOW_DAYS = 365
 
 
 def _ua() -> str:

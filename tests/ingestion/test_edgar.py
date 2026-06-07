@@ -159,6 +159,18 @@ def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
 
     monkeypatch.setattr("saturn.ingestion.edgar._fetch_filing_html", fake_html)
     monkeypatch.setattr("saturn.ingestion.edgar._cache_full_text", lambda *a, **k: "cache://ref")
+    monkeypatch.setattr(
+        "saturn.ingestion.edgar._select_recent_8ks",
+        lambda submissions, *, since: [
+            {
+                "form": "8-K",
+                "accession": "0001045810-24-000200",
+                "primary_document": "ev-20240522.htm",
+                "filing_date": "2024-05-22",
+                "item_codes": ["2.02", "9.01"],
+            }
+        ],
+    )
 
     result = fetch_edgar("NVDA")
 
