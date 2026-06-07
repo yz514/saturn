@@ -154,3 +154,32 @@ def test_context_caps_events():
     assert ctx.count("MATERIAL EVENTS") == 1
     event_lines = [ln for ln in ctx.splitlines() if ln.startswith("- ") and "Event " in ln]
     assert len(event_lines) <= _CTX_MAX_EVENTS
+
+
+class _ListFieldClient:
+    """Returns analysis JSON with open_questions as a list (a real Sonnet quirk),
+    optionally wrapped in ```json fences."""
+
+    def __init__(self, *, fenced: bool = False):
+        self.fenced = fenced
+
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        body = (
+            '{"executive_summary": "e", "company_overview": "c", '
+            '"business_segments": "s", "financial_snapshot": "fs", '
+            '"valuation_discussion": "v", "key_risks": "k", '
+            '"open_questions": ["q1", "q2", "q3"]}'
+        )
+        return f"```json\n{body}\n```" if self.fenced else body
+
+
+def test_analyze_coerces_list_field_to_string():
+    result = analyze(_mock_dossier("NVDA"), _ListFieldClient())
+    assert result.open_questions == "q1\nq2\nq3"
+
+
+def test_analyze_handles_fenced_json_with_list_field():
+    # Mirrors the exact real-world failure: ```json fences + open_questions array.
+    result = analyze(_mock_dossier("NVDA"), _ListFieldClient(fenced=True))
+    assert result.open_questions == "q1\nq2\nq3"
+    assert result.executive_summary == "e"

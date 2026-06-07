@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date
 from typing import TypeVar
@@ -32,7 +33,7 @@ DEBATE_SYSTEM = (
     "view. Respond with ONLY a valid JSON object, no prose, no code fences."
 )
 
-_MAX_OUTPUT_TOKENS = 4096
+_MAX_OUTPUT_TOKENS = 8192
 
 _CTX_MAX_ANNUAL = 3
 _CTX_MAX_QUARTERS = 4
@@ -164,13 +165,37 @@ class LLMResponseError(RuntimeError):
     """Raised when the LLM response can't be parsed into the expected schema."""
 
 
+def _coerce_str(value: object) -> str:
+    """Coerce an LLM field value to a plain string. Models sometimes return a
+    section (e.g. open_questions) as a JSON array/object even when a string is
+    asked for; join arrays with newlines and stringify objects rather than fail."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "\n".join(_coerce_str(v) for v in value)
+    if isinstance(value, dict):
+        return "\n".join(f"{k}: {_coerce_str(v)}" for k, v in value.items())
+    return str(value)
+
+
 def _parse(model_cls: type[_T], raw: str, schema: str) -> _T:
-    """Parse an LLM JSON response into `model_cls`, or raise LLMResponseError."""
+    """Parse an LLM JSON response into `model_cls`, or raise LLMResponseError.
+
+    Tolerates non-string field values (coerced to strings) and surfaces truncated
+    or malformed JSON as a clean LLMResponseError instead of a stack trace."""
     try:
-        return model_cls.model_validate_json(_extract_json(raw))
-    except (ValueError, ValidationError) as exc:
+        data = json.loads(_extract_json(raw))
+    except ValueError as exc:
         raise LLMResponseError(
             f"model returned malformed or truncated JSON for {schema}"
+        ) from exc
+    if isinstance(data, dict):
+        data = {k: _coerce_str(v) for k, v in data.items()}
+    try:
+        return model_cls.model_validate(data)
+    except ValidationError as exc:
+        raise LLMResponseError(
+            f"model returned JSON that does not match the {schema} schema"
         ) from exc
 
 
@@ -182,7 +207,9 @@ def analyze(
         f"Company data:\n{_company_context(company)}\n\n"
         "Return ONLY a JSON object with these string keys: "
         "executive_summary, company_overview, business_segments, "
-        "financial_snapshot, valuation_discussion, key_risks, open_questions."
+        "financial_snapshot, valuation_discussion, key_risks, open_questions. "
+        "Each value MUST be a single plain string (use newlines within a value "
+        "for lists; do NOT return arrays or nested objects)."
     )
     logger.info("analyze: %s", company.ticker)
     raw = llm.complete(ANALYSIS_SYSTEM, prompt, model=model, max_tokens=_MAX_OUTPUT_TOKENS)
@@ -196,7 +223,8 @@ def debate(
         "OUTPUT_SCHEMA=debate\n"
         f"Company data:\n{_company_context(company)}\n\n"
         "Return ONLY a JSON object with these string keys: "
-        "bull_thesis, bear_thesis, final_view."
+        "bull_thesis, bear_thesis, final_view. "
+        "Each value MUST be a single plain string (not an array or nested object)."
     )
     logger.info("debate: %s", company.ticker)
     raw = llm.complete(DEBATE_SYSTEM, prompt, model=model, max_tokens=_MAX_OUTPUT_TOKENS)
