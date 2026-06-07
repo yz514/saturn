@@ -9,8 +9,6 @@ from __future__ import annotations
 import re
 from html import unescape
 
-_ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik_int}/{accn_nodash}/{doc}"
-
 # (name, start-marker regex, list of end-marker regexes) for targeted 10-K/10-Q items.
 _SECTION_SPECS = [
     ("Business", r"item\s*1\.?\s+business", [r"item\s*1a\b"]),

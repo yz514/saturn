@@ -12,11 +12,7 @@ from datetime import date
 
 from saturn.config import get_settings
 from saturn.ingestion.cache import write_cache
-from saturn.ingestion.edgar_filings import (
-    _ARCHIVE_URL,
-    _extract_filing_sections,
-    _select_latest,
-)
+from saturn.ingestion.edgar_filings import _extract_filing_sections, _select_latest
 from saturn.ingestion.errors import DataUnavailable
 from saturn.ingestion.http import http_get
 from saturn.ingestion.identifiers import ticker_to_cik
@@ -45,6 +41,7 @@ EDGAR_CONCEPTS: dict[str, list[str]] = {
 
 _COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 _SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+_ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik_int}/{accn_nodash}/{doc}"
 
 
 def _annual_usd_entries(tag_block: dict) -> dict[int, dict]:
