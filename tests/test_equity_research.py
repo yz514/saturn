@@ -1,8 +1,28 @@
+import pytest
+
 from datetime import date
 
 from saturn.ingestion.dossier import _mock_dossier
 from saturn.llm.mock_client import MockLLMClient
-from saturn.workflows.equity_research import _company_context, run
+from saturn.models import (
+    CompanyDossier,
+    FilingSection,
+    FinancialFact,
+    Fundamentals,
+    MaterialEvent,
+    Provenance,
+)
+from saturn.workflows.equity_research import (
+    LLMResponseError,
+    _CTX_MAX_ANNUAL,
+    _CTX_MAX_EVENTS,
+    _CTX_SECTION_CHARS,
+    _MAX_OUTPUT_TOKENS,
+    _company_context,
+    analyze,
+    debate,
+    run,
+)
 
 
 def test_company_context_includes_inline_provenance():
@@ -44,3 +64,122 @@ def test_company_context_includes_material_events():
     assert "Results of Operations and Financial Condition" in ctx
     # quarterly fact is rendered too (provenance-tagged fundamentals loop)
     assert "Q2 FY2025" in ctx
+
+
+class _TruncatedClient:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        return '{"executive_summary": "abc'  # truncated JSON
+
+
+class _CapturingClient:
+    def __init__(self):
+        self.calls = []
+
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        self.calls.append(max_tokens)
+        if "OUTPUT_SCHEMA=debate" in prompt:
+            return '{"bull_thesis": "b", "bear_thesis": "x", "final_view": "f"}'
+        return (
+            '{"executive_summary": "e", "company_overview": "c", '
+            '"business_segments": "s", "financial_snapshot": "fs", '
+            '"valuation_discussion": "v", "key_risks": "k", "open_questions": "o"}'
+        )
+
+
+def test_analyze_raises_llmresponseerror_on_truncated_json():
+    with pytest.raises(LLMResponseError):
+        analyze(_mock_dossier("NVDA"), _TruncatedClient())
+
+
+def test_debate_raises_llmresponseerror_on_truncated_json():
+    with pytest.raises(LLMResponseError):
+        debate(_mock_dossier("NVDA"), _TruncatedClient())
+
+
+def test_analyze_requests_max_output_tokens():
+    client = _CapturingClient()
+    analyze(_mock_dossier("NVDA"), client)
+    assert client.calls == [_MAX_OUTPUT_TOKENS]
+
+
+def test_debate_requests_max_output_tokens():
+    client = _CapturingClient()
+    debate(_mock_dossier("NVDA"), client)
+    assert client.calls == [_MAX_OUTPUT_TOKENS]
+
+
+def _big_dossier() -> CompanyDossier:
+    prov = Provenance(source="SEC EDGAR")
+    facts = []
+    for fy in range(2019, 2026):  # 7 annual years of Revenues
+        facts.append(FinancialFact(concept="Revenues", value=float(fy), unit="USD", fiscal_period=f"FY{fy}", provenance=prov))
+    for i in range(1, 7):  # 6 quarters across FY2024/FY2025
+        q = ((i - 1) % 4) + 1
+        fy = 2024 if i <= 4 else 2025
+        facts.append(FinancialFact(concept="Revenues", value=float(i), unit="USD", fiscal_period=f"Q{q} FY{fy}", provenance=prov))
+    events = [
+        MaterialEvent(filing_date=date(2025, m, 1), item_codes=["2.02"], title=f"Event {m}", excerpt="E" * 2000, provenance=prov)
+        for m in range(1, 11)  # 10 events
+    ]
+    return CompanyDossier(
+        ticker="NVDA",
+        name="NVIDIA",
+        fundamentals=Fundamentals(facts=facts),
+        filing_sections=[FilingSection(name="Risk Factors", excerpt="R" * 5000, provenance=prov)],
+        material_events=events,
+        generated_at=date(2026, 6, 6),
+    )
+
+
+def test_context_caps_annual_facts():
+    ctx = _company_context(_big_dossier())
+    assert "FY2025" in ctx and "FY2024" in ctx and "FY2023" in ctx
+    assert "FY2019" not in ctx and "FY2020" not in ctx
+
+
+def test_context_trims_section_excerpt():
+    ctx = _company_context(_big_dossier())
+    assert "Risk Factors" in ctx                       # section rendered
+    assert "R" * (_CTX_SECTION_CHARS + 1) not in ctx   # excerpt trimmed to the cap
+
+
+def test_context_caps_quarterly_facts():
+    ctx = _company_context(_big_dossier())
+    assert "Q2 FY2025" in ctx and "Q3 FY2024" in ctx        # most-recent 4 kept
+    assert "Q1 FY2024" not in ctx and "Q2 FY2024" not in ctx  # older quarters dropped
+
+
+def test_context_caps_events():
+    ctx = _company_context(_big_dossier())
+    assert ctx.count("MATERIAL EVENTS") == 1
+    event_lines = [ln for ln in ctx.splitlines() if ln.startswith("- ") and "Event " in ln]
+    assert len(event_lines) <= _CTX_MAX_EVENTS
+
+
+class _ListFieldClient:
+    """Returns analysis JSON with open_questions as a list (a real Sonnet quirk),
+    optionally wrapped in ```json fences."""
+
+    def __init__(self, *, fenced: bool = False):
+        self.fenced = fenced
+
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        body = (
+            '{"executive_summary": "e", "company_overview": "c", '
+            '"business_segments": "s", "financial_snapshot": "fs", '
+            '"valuation_discussion": "v", "key_risks": "k", '
+            '"open_questions": ["q1", "q2", "q3"]}'
+        )
+        return f"```json\n{body}\n```" if self.fenced else body
+
+
+def test_analyze_coerces_list_field_to_string():
+    result = analyze(_mock_dossier("NVDA"), _ListFieldClient())
+    assert result.open_questions == "q1\nq2\nq3"
+
+
+def test_analyze_handles_fenced_json_with_list_field():
+    # Mirrors the exact real-world failure: ```json fences + open_questions array.
+    result = analyze(_mock_dossier("NVDA"), _ListFieldClient(fenced=True))
+    assert result.open_questions == "q1\nq2\nq3"
+    assert result.executive_summary == "e"

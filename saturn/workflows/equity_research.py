@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date
+from typing import TypeVar
+
+from pydantic import ValidationError
 
 from saturn.llm.base import LLMClient
 from saturn.models import (
@@ -12,6 +16,8 @@ from saturn.models import (
     DebateSections,
     ResearchReport,
 )
+
+_T = TypeVar("_T")
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +32,50 @@ DEBATE_SYSTEM = (
     "honest case for each side from the provided data, then a balanced final "
     "view. Respond with ONLY a valid JSON object, no prose, no code fences."
 )
+
+_MAX_OUTPUT_TOKENS = 8192
+
+_CTX_MAX_ANNUAL = 3
+_CTX_MAX_QUARTERS = 4
+_CTX_SECTION_CHARS = 1200
+_CTX_MAX_EVENTS = 6
+_CTX_EVENT_CHARS = 500
+
+
+def _fy_num(period: str) -> int:
+    """'FY2024' -> 2024; unparseable -> -1."""
+    try:
+        return int((period or "").replace("FY", "").strip())
+    except (ValueError, AttributeError):
+        return -1
+
+
+def _q_sort(period: str) -> tuple[int, int]:
+    """'Q2 FY2025' -> (2025, 2); unparseable -> (-1, -1)."""
+    try:
+        q_part, fy_part = period.split()
+        return (int(fy_part.replace("FY", "")), int(q_part[1]))
+    except (ValueError, AttributeError, IndexError):
+        return (-1, -1)
+
+
+def _select_context_facts(facts: list) -> list:
+    """Per concept, keep the most-recent _CTX_MAX_ANNUAL annual + _CTX_MAX_QUARTERS
+    quarterly facts (prompt budget control; the dossier keeps the full set)."""
+    by_concept: dict[str, list] = {}
+    for f in facts:
+        by_concept.setdefault(f.concept, []).append(f)
+    out: list = []
+    for items in by_concept.values():
+        annual = [x for x in items if (x.fiscal_period or "").startswith("FY")]
+        quarterly = [x for x in items if (x.fiscal_period or "").startswith("Q")]
+        # facts whose fiscal_period isn't FY*/Q* (e.g. TTM) are intentionally
+        # excluded from the prompt context.
+        annual.sort(key=lambda x: _fy_num(x.fiscal_period), reverse=True)
+        quarterly.sort(key=lambda x: _q_sort(x.fiscal_period), reverse=True)
+        out.extend(annual[:_CTX_MAX_ANNUAL])
+        out.extend(quarterly[:_CTX_MAX_QUARTERS])
+    return out
 
 
 def _company_context(dossier: CompanyDossier) -> str:
@@ -51,7 +101,7 @@ def _company_context(dossier: CompanyDossier) -> str:
 
     if dossier.fundamentals and dossier.fundamentals.facts:
         lines.append("\nFUNDAMENTALS (as-reported):")
-        for fact in dossier.fundamentals.facts:
+        for fact in _select_context_facts(dossier.fundamentals.facts):
             cite = fact.provenance.source
             if fact.provenance.as_of:
                 cite += f", as of {fact.provenance.as_of}"
@@ -63,15 +113,17 @@ def _company_context(dossier: CompanyDossier) -> str:
     if dossier.filing_sections:
         lines.append("\nFILING SECTIONS:")
         for s in dossier.filing_sections:
-            lines.append(f"- {s.name} (source: {s.provenance.source}): {s.excerpt}")
+            excerpt = (s.excerpt or "")[:_CTX_SECTION_CHARS]
+            lines.append(f"- {s.name} (source: {s.provenance.source}): {excerpt}")
 
     if dossier.material_events:
         lines.append("\nMATERIAL EVENTS (SEC 8-K):")
-        for ev in dossier.material_events:
+        recent = sorted(dossier.material_events, key=lambda e: e.filing_date, reverse=True)
+        for ev in recent[:_CTX_MAX_EVENTS]:
             label = ev.title or ", ".join(ev.item_codes) or "8-K"
             lines.append(f"- {ev.filing_date}: {label} (source: {ev.provenance.source})")
             if ev.excerpt:
-                lines.append(f"  {ev.excerpt}")
+                lines.append(f"  {ev.excerpt[:_CTX_EVENT_CHARS]}")
 
     if dossier.macro and dossier.macro.series:
         lines.append("\nMACRO:")
@@ -109,6 +161,44 @@ def _extract_json(text: str) -> str:
     return t
 
 
+class LLMResponseError(RuntimeError):
+    """Raised when the LLM response can't be parsed into the expected schema."""
+
+
+def _coerce_str(value: object) -> str:
+    """Coerce an LLM field value to a plain string. Models sometimes return a
+    section (e.g. open_questions) as a JSON array/object even when a string is
+    asked for; join arrays with newlines and stringify objects rather than fail."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "\n".join(_coerce_str(v) for v in value)
+    if isinstance(value, dict):
+        return "\n".join(f"{k}: {_coerce_str(v)}" for k, v in value.items())
+    return str(value)
+
+
+def _parse(model_cls: type[_T], raw: str, schema: str) -> _T:
+    """Parse an LLM JSON response into `model_cls`, or raise LLMResponseError.
+
+    Tolerates non-string field values (coerced to strings) and surfaces truncated
+    or malformed JSON as a clean LLMResponseError instead of a stack trace."""
+    try:
+        data = json.loads(_extract_json(raw))
+    except ValueError as exc:
+        raise LLMResponseError(
+            f"model returned malformed or truncated JSON for {schema}"
+        ) from exc
+    if isinstance(data, dict):
+        data = {k: _coerce_str(v) for k, v in data.items()}
+    try:
+        return model_cls.model_validate(data)
+    except ValidationError as exc:
+        raise LLMResponseError(
+            f"model returned JSON that does not match the {schema} schema"
+        ) from exc
+
+
 def analyze(
     company: CompanyDossier, llm: LLMClient, *, model: str | None = None
 ) -> AnalysisSections:
@@ -117,11 +207,13 @@ def analyze(
         f"Company data:\n{_company_context(company)}\n\n"
         "Return ONLY a JSON object with these string keys: "
         "executive_summary, company_overview, business_segments, "
-        "financial_snapshot, valuation_discussion, key_risks, open_questions."
+        "financial_snapshot, valuation_discussion, key_risks, open_questions. "
+        "Each value MUST be a single plain string (use newlines within a value "
+        "for lists; do NOT return arrays or nested objects)."
     )
     logger.info("analyze: %s", company.ticker)
-    raw = llm.complete(ANALYSIS_SYSTEM, prompt, model=model)
-    return AnalysisSections.model_validate_json(_extract_json(raw))
+    raw = llm.complete(ANALYSIS_SYSTEM, prompt, model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+    return _parse(AnalysisSections, raw, "analysis")
 
 
 def debate(
@@ -131,11 +223,12 @@ def debate(
         "OUTPUT_SCHEMA=debate\n"
         f"Company data:\n{_company_context(company)}\n\n"
         "Return ONLY a JSON object with these string keys: "
-        "bull_thesis, bear_thesis, final_view."
+        "bull_thesis, bear_thesis, final_view. "
+        "Each value MUST be a single plain string (not an array or nested object)."
     )
     logger.info("debate: %s", company.ticker)
-    raw = llm.complete(DEBATE_SYSTEM, prompt, model=model)
-    return DebateSections.model_validate_json(_extract_json(raw))
+    raw = llm.complete(DEBATE_SYSTEM, prompt, model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+    return _parse(DebateSections, raw, "debate")
 
 
 def _build_sources(dossier: CompanyDossier, *, mock: bool) -> list[str]:

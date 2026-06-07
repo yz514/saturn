@@ -28,7 +28,9 @@ _DEBATE = json.dumps(
 class MockLLMClient:
     """Returns fixed JSON keyed by the OUTPUT_SCHEMA tag in the prompt."""
 
-    def complete(self, system: str, prompt: str, *, model: str | None = None) -> str:
+    def complete(
+        self, system: str, prompt: str, *, model: str | None = None, max_tokens: int = 2000
+    ) -> str:
         if "OUTPUT_SCHEMA=debate" in prompt:
             return _DEBATE
         if "OUTPUT_SCHEMA=analysis" in prompt:

@@ -32,3 +32,10 @@ def test_mock_is_deterministic():
     a = client.complete("s", "OUTPUT_SCHEMA=analysis")
     b = client.complete("s", "OUTPUT_SCHEMA=analysis")
     assert a == b
+
+
+def test_mock_client_accepts_max_tokens():
+    from saturn.llm.mock_client import MockLLMClient
+
+    out = MockLLMClient().complete("sys", "OUTPUT_SCHEMA=analysis", max_tokens=4096)
+    assert "executive_summary" in out
