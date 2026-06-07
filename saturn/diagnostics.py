@@ -25,7 +25,10 @@ class CheckResult(BaseModel):
 
 
 def check_anthropic(settings) -> CheckResult:
-    """Verify the Anthropic key by a tiny live ping on the cheapest model."""
+    """Verify the Anthropic key by a tiny live ping on the cheapest model.
+
+    `settings` is any object exposing `anthropic_api_key: str | None`.
+    """
     if not settings.anthropic_api_key:
         return CheckResult(name="Anthropic", ok=False, detail="ANTHROPIC_API_KEY not set")
     try:

@@ -35,3 +35,17 @@ def test_check_anthropic_error_is_caught(monkeypatch):
     r = check_anthropic(SimpleNamespace(anthropic_api_key="testkey"))
     assert r.ok is False
     assert "bad key" in r.detail
+
+
+def test_check_anthropic_empty_response(monkeypatch):
+    class _EmptyClient:
+        def __init__(self, api_key, default_model):
+            pass
+
+        def complete(self, system, prompt, *, model=None):
+            return "   "
+
+    monkeypatch.setattr("saturn.diagnostics.AnthropicClient", _EmptyClient)
+    r = check_anthropic(SimpleNamespace(anthropic_api_key="testkey"))
+    assert r.ok is False
+    assert "empty response" in r.detail
