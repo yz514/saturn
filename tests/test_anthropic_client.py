@@ -13,3 +13,10 @@ def test_build_params_uses_prompt_caching_on_system():
     system_block = params["system"][0]
     assert system_block["text"] == "system text"
     assert system_block["cache_control"] == {"type": "ephemeral"}
+
+
+def test_build_params_carries_max_tokens():
+    from saturn.llm.anthropic_client import _build_params
+
+    params = _build_params("sys", "prompt", "claude-sonnet-4-6", max_tokens=4096)
+    assert params["max_tokens"] == 4096

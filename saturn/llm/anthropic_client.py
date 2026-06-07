@@ -30,8 +30,10 @@ class AnthropicClient:
         self._client = Anthropic(api_key=api_key)
         self._default_model = default_model
 
-    def complete(self, system: str, prompt: str, *, model: str | None = None) -> str:
-        params = _build_params(system, prompt, model or self._default_model)
+    def complete(
+        self, system: str, prompt: str, *, model: str | None = None, max_tokens: int = 2000
+    ) -> str:
+        params = _build_params(system, prompt, model or self._default_model, max_tokens=max_tokens)
         response = self._client.messages.create(**params)
         return "".join(
             getattr(block, "text", "")
