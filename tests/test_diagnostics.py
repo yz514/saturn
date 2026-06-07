@@ -133,3 +133,30 @@ def test_check_yfinance_no_price(monkeypatch):
     )
     r = check_yfinance("AAPL")
     assert r.ok is False and "no price returned" in r.detail
+
+
+from saturn.diagnostics import format_report, run_checks
+
+
+def test_run_checks_returns_four(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr("saturn.diagnostics.check_anthropic", lambda s: CheckResult(name="Anthropic", ok=True, detail="x"))
+    monkeypatch.setattr("saturn.diagnostics.check_yfinance", lambda t: CheckResult(name="yfinance", ok=True, detail="x"))
+    monkeypatch.setattr("saturn.diagnostics.check_edgar", lambda t: CheckResult(name="SEC EDGAR", ok=True, detail="x"))
+    monkeypatch.setattr("saturn.diagnostics.check_fred", lambda: CheckResult(name="FRED", ok=True, detail="x"))
+    results = run_checks("AAPL", settings=SimpleNamespace(anthropic_api_key="k"))
+    assert [r.name for r in results] == ["Anthropic", "yfinance", "SEC EDGAR", "FRED"]
+
+
+def test_format_report_marks_and_summary():
+    results = [
+        CheckResult(name="Anthropic", ok=True, detail="key works"),
+        CheckResult(name="FRED", ok=False, detail="FRED_API_KEY not set"),
+    ]
+    out = format_report("AAPL", results)
+    assert "Saturn doctor - ticker: AAPL" in out
+    assert "[OK]" in out and "[FAIL]" in out
+    assert "key works" in out and "FRED_API_KEY not set" in out
+    assert "1/2 checks passed." in out
+    # ASCII-safe: no non-ASCII chars (Windows console)
+    out.encode("ascii")

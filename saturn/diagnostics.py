@@ -89,3 +89,26 @@ def check_fred() -> CheckResult:
         return CheckResult(name="FRED", ok=False, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         return CheckResult(name="FRED", ok=False, detail=str(exc))
+
+
+def run_checks(ticker: str, *, settings) -> list[CheckResult]:
+    """Run all dependency checks (Anthropic, yfinance, EDGAR, FRED) in order."""
+    return [
+        check_anthropic(settings),
+        check_yfinance(ticker),
+        check_edgar(ticker),
+        check_fred(),
+    ]
+
+
+def format_report(ticker: str, results: list[CheckResult]) -> str:
+    """Render an ASCII-safe readiness report (Windows-console friendly)."""
+    lines = [f"Saturn doctor - ticker: {ticker}", ""]
+    width = max((len(r.name) for r in results), default=0)
+    for r in results:
+        mark = "[OK]  " if r.ok else "[FAIL]"
+        lines.append(f"{mark} {r.name.ljust(width)}  {r.detail}")
+    passed = sum(1 for r in results if r.ok)
+    lines.append("")
+    lines.append(f"{passed}/{len(results)} checks passed.")
+    return "\n".join(lines)
