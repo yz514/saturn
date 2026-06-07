@@ -89,3 +89,9 @@ def test_analyze_requests_max_output_tokens():
     client = _CapturingClient()
     analyze(_mock_dossier("NVDA"), client)
     assert client.calls == [_MAX_OUTPUT_TOKENS]
+
+
+def test_debate_requests_max_output_tokens():
+    client = _CapturingClient()
+    debate(_mock_dossier("NVDA"), client)
+    assert client.calls == [_MAX_OUTPUT_TOKENS]

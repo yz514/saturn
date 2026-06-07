@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from typing import TypeVar
 
 from pydantic import ValidationError
 
@@ -14,6 +15,8 @@ from saturn.models import (
     DebateSections,
     ResearchReport,
 )
+
+_T = TypeVar("_T")
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +120,7 @@ class LLMResponseError(RuntimeError):
     """Raised when the LLM response can't be parsed into the expected schema."""
 
 
-def _parse(model_cls, raw: str, schema: str):
+def _parse(model_cls: type[_T], raw: str, schema: str) -> _T:
     """Parse an LLM JSON response into `model_cls`, or raise LLMResponseError."""
     try:
         return model_cls.model_validate_json(_extract_json(raw))
