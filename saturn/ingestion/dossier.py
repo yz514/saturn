@@ -9,9 +9,11 @@ while real adapters are added incrementally.
 from __future__ import annotations
 
 import logging
+import sys
 from datetime import date
 from typing import Callable
 
+from saturn.analytics.metrics import compute_metrics
 from saturn.ingestion.dispatch import route_to_source
 from saturn.ingestion.edgar import fetch_edgar
 from saturn.ingestion.errors import DataUnavailable
@@ -32,6 +34,12 @@ from saturn.models import (
 
 logger = logging.getLogger(__name__)
 
+# Originals captured at import time; used to detect when a caller relies on the
+# default adapter (so monkeypatching the module-level name is also honoured).
+_ORIG_FETCH_QUOTE = fetch_quote
+_ORIG_FETCH_EDGAR = fetch_edgar
+_ORIG_FETCH_FRED = fetch_fred
+
 
 def _mock_dossier(ticker: str) -> CompanyDossier:
     prov_q = Provenance(source="yfinance (mock)", as_of=date.today())
@@ -41,7 +49,7 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
         as_of=date(2025, 2, 21),
     )
     prov_f = Provenance(source="FRED (mock)", as_of=date(2026, 5, 1))
-    return CompanyDossier(
+    dossier = CompanyDossier(
         ticker=ticker,
         cik="0001045810",
         name="NVIDIA Corporation",
@@ -87,6 +95,8 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
         news=[NewsItem(title="[MOCK] NVIDIA announces next-gen architecture", publisher="MockWire", link="https://example.com/mock")],
         generated_at=date.today(),
     )
+    dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote)
+    return dossier
 
 
 def build_dossier(
@@ -114,6 +124,17 @@ def build_dossier(
     if mock:
         logger.info("dossier(mock): %s", ticker)
         return _mock_dossier(ticker)
+
+    # Allow monkeypatching of module-level names: when the caller used the
+    # default adapter (i.e., they didn't pass an explicit override), re-read
+    # the current module attribute so test monkeypatching is honoured.
+    _mod = sys.modules[__name__]
+    if quote_fn is _ORIG_FETCH_QUOTE:
+        quote_fn = getattr(_mod, "fetch_quote")
+    if edgar_fn is _ORIG_FETCH_EDGAR:
+        edgar_fn = getattr(_mod, "fetch_edgar")
+    if fred_fn is _ORIG_FETCH_FRED:
+        fred_fn = getattr(_mod, "fetch_fred")
 
     ident = identity or {}
     gaps = []
@@ -156,7 +177,7 @@ def build_dossier(
             type(edgar_result).__name__,
         )
 
-    return CompanyDossier(
+    dossier = CompanyDossier(
         ticker=ticker,
         cik=ident.get("cik") or edgar_cik,
         name=ident.get("name") or edgar_name or ticker,
@@ -173,3 +194,5 @@ def build_dossier(
         gaps=gaps,
         generated_at=date.today(),
     )
+    dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote)
+    return dossier
