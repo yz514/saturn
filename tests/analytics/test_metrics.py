@@ -237,3 +237,35 @@ def test_ttm_and_valuation():
 def test_valuation_skipped_without_quote():
     f = _facts([("NetIncomeLoss", "FY2025", 200.0)])
     assert _by_name(compute_metrics(f, None), "pe_ratio", "TTM") is None
+
+
+def test_valuation_falls_back_to_fy_when_quarters_incomplete():
+    # Only 2 quarters present -> TTM (needs 4) unavailable -> valuation uses latest FY,
+    # labeled with the FY period, never silently mixed with "TTM".
+    f = _facts([
+        ("NetIncomeLoss", "FY2025", 200.0),
+        ("Revenues", "FY2025", 1000.0),
+        ("StockholdersEquity", "FY2025", 5000.0),
+        ("NetIncomeLoss", "Q2 FY2025", 50.0),
+        ("NetIncomeLoss", "Q1 FY2025", 40.0),
+    ])
+    ms = compute_metrics(f, _quote(market_cap=10_000.0))
+    assert _by_name(ms, "net_income_ttm", "TTM") is None        # <4 quarters -> no TTM
+    pe = _by_name(ms, "pe_ratio", "FY2025")                     # falls back to latest FY, FY-labeled
+    assert pe is not None and abs(pe.value - 50.0) < 1e-9       # 10000 / 200
+    assert _by_name(ms, "pe_ratio", "TTM") is None
+
+
+def test_no_fabricated_q2_q3_single_quarter_fcf():
+    # Annual + Q1 cash flow exist (Q1 YTD == the quarter, retained upstream); Q2/Q3 have
+    # no OCF/CapEx, so single-quarter FCF must NOT be fabricated for them.
+    f = _facts([
+        ("OperatingCashFlow", "FY2025", 1000.0), ("CapitalExpenditures", "FY2025", 300.0),
+        ("OperatingCashFlow", "Q1 FY2025", 200.0), ("CapitalExpenditures", "Q1 FY2025", 60.0),
+        ("Revenues", "Q2 FY2025", 500.0), ("Revenues", "Q3 FY2025", 600.0),
+    ])
+    ms = compute_metrics(f, None)
+    assert _by_name(ms, "fcf", "FY2025") is not None            # annual FCF
+    assert _by_name(ms, "fcf", "Q1 FY2025") is not None         # Q1 single-quarter FCF
+    assert _by_name(ms, "fcf", "Q2 FY2025") is None             # not fabricated
+    assert _by_name(ms, "fcf", "Q3 FY2025") is None             # not fabricated
