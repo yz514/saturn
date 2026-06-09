@@ -98,6 +98,40 @@ Internals:
 
 `saturn/analytics/__init__.py` is added (new package).
 
+### 4.1 Metric catalog = single source of truth (`saturn/analytics/catalog.py`)
+
+The formula catalog (§6) lives in code **once**, as the authoritative source for
+each metric's metadata, and drives both computation and the reference doc:
+
+```python
+@dataclass(frozen=True)
+class MetricDef:
+    name: str
+    category: str            # "Profitability", "Returns", ...
+    fmt: str                 # "percent" | "ratio" | "currency" | "x" | "per_share"
+    formula: str             # "GrossProfit / Revenues"
+    description: str         # one line, human-readable
+    caveat: str | None = None  # e.g. "NOPAT approx = OpInc x (1 - eff. tax)."
+
+METRIC_CATALOG: dict[str, MetricDef] = { ... }   # every metric in §6
+
+def render_metrics_reference() -> str:
+    """Render METRIC_CATALOG to the canonical docs/metrics.md markdown."""
+```
+
+- `compute_metrics` pulls each emitted `DerivedMetric`'s `format` and `formula`
+  from `METRIC_CATALOG[name]` (never hardcoded at the call site), so the number,
+  the report, and the doc all show the *same* formula string by construction.
+- `docs/metrics.md` is **generated** from `render_metrics_reference()` and
+  committed, with a header noting "generated — do not edit by hand; run
+  `saturn metrics --write`".
+- CLI: `saturn metrics` prints the reference to stdout; `saturn metrics --write`
+  regenerates `docs/metrics.md`.
+- A drift-guard test (see §10) asserts the committed `docs/metrics.md` equals
+  `render_metrics_reference()`, and that catalog names and computed-metric names
+  match exactly (no orphan metric, no undocumented metric). Drift becomes
+  impossible to merge.
+
 ## 5. Period coverage, TTM, and single-quarter cash flow
 
 **Level metrics** (margins, returns, liquidity, leverage, efficiency, per-share)
@@ -138,6 +172,9 @@ its own and would otherwise partly reverse PR #9. Slice B does not fabricate
 these — it emits only the cleanly-available annual + Q1 figures above.
 
 ## 6. Metric catalog
+
+This table is the human view of `METRIC_CATALOG` (§4.1); the code holds the same
+set as the single source of truth, and `docs/metrics.md` is generated from it.
 
 `fmt` legend: % = percent, R = ratio, $ = currency, x = multiple, /sh = per_share.
 "TotalDebt" = `LongTermDebt + DebtCurrent` (DebtCurrent optional; if absent, use
@@ -263,7 +300,8 @@ Financial Snapshot (sections renumber down). Two compact tables:
 - **Valuation (current)** — point-in-time / TTM multiples: `Metric · Value ·
   Formula`.
 Both bounded for readability; a transparency note states the periods shown. The
-dossier retains the full set.
+dossier retains the full set. A line links the canonical methodology:
+"Metric definitions & formulas: docs/metrics.md".
 
 ## 9. Error handling
 
@@ -287,6 +325,13 @@ Pure unit tests in `tests/analytics/test_metrics.py` over tiny synthetic
   Q2/Q3 single-quarter CF is fabricated (deferred per §5).
 - `format` field correctness per metric.
 
+Catalog & doc generation (`tests/analytics/test_catalog.py`):
+- `render_metrics_reference()` output equals the committed `docs/metrics.md`
+  (drift guard — fails if the catalog changed without regenerating the doc).
+- Catalog names and the set of names `compute_metrics` can emit match exactly
+  (no orphan metric, no undocumented metric).
+- Every `DerivedMetric`'s `format`/`formula` come from `METRIC_CATALOG`.
+
 Plus:
 - `tests/test_equity_research.py`: context includes the DERIVED METRICS block
   with formula + provenance.
@@ -298,9 +343,13 @@ Plus:
 ## 11. File structure summary
 
 - **Create:** `saturn/analytics/__init__.py`, `saturn/analytics/metrics.py`,
-  `tests/analytics/__init__.py`, `tests/analytics/test_metrics.py`
+  `saturn/analytics/catalog.py` (MetricDef, METRIC_CATALOG,
+  render_metrics_reference), `docs/metrics.md` (generated, committed),
+  `tests/analytics/__init__.py`, `tests/analytics/test_metrics.py`,
+  `tests/analytics/test_catalog.py`
 - **Modify:** `saturn/models.py` (MetricInput, DerivedMetric, dossier field);
   `saturn/ingestion/edgar.py` (two concepts); `saturn/ingestion/dossier.py`
   (compute + attach, real + mock); `saturn/workflows/equity_research.py`
   (context block); `saturn/reports/markdown_report.py` (Key Metrics section +
-  renumber); existing tests for the touched renderers/context.
+  methodology link + renumber); `saturn/cli.py` (`metrics` command); existing
+  tests for the touched renderers/context.
