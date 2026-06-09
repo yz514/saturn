@@ -86,3 +86,29 @@ def test_returns_and_effective_tax_rate():
     assert abs(_by_name(ms, "roce", "FY2025").value - 0.15) < 1e-9
     # roic = (300 * (1 - 0.20)) / (500 + 1000) = 240 / 1500 = 0.16
     assert abs(_by_name(ms, "roic", "FY2025").value - 0.16) < 1e-9
+
+
+def test_liquidity_and_leverage():
+    f = _facts([
+        ("AssetsCurrent", "FY2025", 2000.0),
+        ("LiabilitiesCurrent", "FY2025", 1000.0),
+        ("Inventory", "FY2025", 400.0),
+        ("CashAndCashEquivalents", "FY2025", 300.0),
+        ("LongTermDebt", "FY2025", 800.0),
+        ("DebtCurrent", "FY2025", 200.0),
+        ("StockholdersEquity", "FY2025", 2000.0),
+        ("Assets", "FY2025", 5000.0),
+        ("OperatingIncomeLoss", "FY2025", 500.0),
+        ("DepreciationAndAmortization", "FY2025", 100.0),
+        ("InterestExpense", "FY2025", 50.0),
+    ])
+    ms = compute_metrics(f, None)
+    assert abs(_by_name(ms, "current_ratio", "FY2025").value - 2.0) < 1e-9
+    assert abs(_by_name(ms, "quick_ratio", "FY2025").value - 1.6) < 1e-9      # (2000-400)/1000
+    assert abs(_by_name(ms, "cash_ratio", "FY2025").value - 0.3) < 1e-9
+    assert abs(_by_name(ms, "debt_to_equity", "FY2025").value - 0.5) < 1e-9   # 1000/2000
+    assert abs(_by_name(ms, "debt_to_assets", "FY2025").value - 0.2) < 1e-9   # 1000/5000
+    assert abs(_by_name(ms, "net_debt", "FY2025").value - 700.0) < 1e-9       # 1000-300
+    # net_debt_to_ebitda = 700 / (500+100) = 1.1667
+    assert abs(_by_name(ms, "net_debt_to_ebitda", "FY2025").value - (700.0 / 600.0)) < 1e-9
+    assert abs(_by_name(ms, "interest_coverage", "FY2025").value - 10.0) < 1e-9

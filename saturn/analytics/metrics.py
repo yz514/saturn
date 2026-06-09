@@ -157,6 +157,55 @@ def _returns(idx, period) -> list[DerivedMetric | None]:
     return out
 
 
+def _total_debt(idx, period) -> tuple[float, list[MetricInput]] | None:
+    ltd = _fact(idx, "LongTermDebt", period)
+    if not ltd:
+        return None
+    dc = _fact(idx, "DebtCurrent", period)
+    total = ltd.value + (dc.value if dc else 0.0)
+    return (total, [_in(ltd)] + ([_in(dc)] if dc else []))
+
+
+def _ebitda(idx, period) -> tuple[float, list[MetricInput]] | None:
+    oi = _fact(idx, "OperatingIncomeLoss", period)
+    da = _fact(idx, "DepreciationAndAmortization", period)
+    if not oi or not da:
+        return None
+    return (oi.value + da.value, [_in(oi), _in(da)])
+
+
+def _liquidity(idx, period) -> list[DerivedMetric | None]:
+    out = [
+        _ratio(idx, period, "current_ratio", "AssetsCurrent", "LiabilitiesCurrent"),
+        _ratio(idx, period, "cash_ratio", "CashAndCashEquivalents", "LiabilitiesCurrent"),
+    ]
+    ac = _fact(idx, "AssetsCurrent", period)
+    inv = _fact(idx, "Inventory", period)
+    lc = _fact(idx, "LiabilitiesCurrent", period)
+    if ac and inv and lc:
+        out.append(_make("quick_ratio", _div(ac.value - inv.value, lc.value), period, [_in(ac), _in(inv), _in(lc)]))
+    return out
+
+
+def _leverage(idx, period) -> list[DerivedMetric | None]:
+    out: list[DerivedMetric | None] = []
+    td = _total_debt(idx, period)
+    eq = _fact(idx, "StockholdersEquity", period)
+    assets = _fact(idx, "Assets", period)
+    cash = _fact(idx, "CashAndCashEquivalents", period)
+    if td and eq:
+        out.append(_make("debt_to_equity", _div(td[0], eq.value), period, td[1] + [_in(eq)]))
+    if td and assets:
+        out.append(_make("debt_to_assets", _div(td[0], assets.value), period, td[1] + [_in(assets)]))
+    if td and cash:
+        out.append(_make("net_debt", td[0] - cash.value, period, td[1] + [_in(cash)]))
+        ebitda = _ebitda(idx, period)
+        if ebitda:
+            out.append(_make("net_debt_to_ebitda", _div(td[0] - cash.value, ebitda[0]), period, td[1] + [_in(cash)] + ebitda[1]))
+    out.append(_ratio(idx, period, "interest_coverage", "OperatingIncomeLoss", "InterestExpense"))
+    return out
+
+
 # ----- entry point -----------------------------------------------------------
 
 
@@ -166,4 +215,6 @@ def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> l
     for period in _annual_periods(idx) + _quarterly_periods(idx):
         out += _profitability(idx, period)
         out += _returns(idx, period)
+        out += _liquidity(idx, period)
+        out += _leverage(idx, period)
     return [m for m in out if m]
