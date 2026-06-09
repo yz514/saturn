@@ -328,6 +328,90 @@ def _quality(idx, period) -> list[DerivedMetric | None]:
     return out
 
 
+def _ttm(idx, concept) -> tuple[float, list[MetricInput]] | None:
+    qs = _quarterly_periods(idx)[:4]
+    facts = [_fact(idx, concept, q) for q in qs]
+    facts = [f for f in facts if f]
+    if len(facts) < 4:
+        return None
+    return (sum(f.value for f in facts), [_in(f) for f in facts])
+
+
+def _ttm_or_fy(idx, concept) -> tuple[float, str, list[MetricInput]] | None:
+    t = _ttm(idx, concept)
+    if t:
+        return (t[0], "TTM", t[1])
+    fy = _annual_periods(idx)
+    if fy:
+        f = _fact(idx, concept, fy[0])
+        if f:
+            return (f.value, fy[0], [_in(f)])
+    return None
+
+
+def _mcap_input(quote: Quote) -> MetricInput:
+    return MetricInput(concept="market_cap", fiscal_period=None, value=quote.market_cap, source=quote.provenance.source)
+
+
+def _ttm_metrics(idx) -> list[DerivedMetric | None]:
+    out: list[DerivedMetric | None] = []
+    for name, concept in (("revenue_ttm", "Revenues"), ("net_income_ttm", "NetIncomeLoss"), ("eps_ttm", "EarningsPerShareDiluted")):
+        t = _ttm(idx, concept)
+        if t:
+            out.append(_make(name, t[0], "TTM", t[1]))
+    return out
+
+
+def _valuation(idx, quote: Quote | None) -> list[DerivedMetric | None]:
+    out: list[DerivedMetric | None] = list(_ttm_metrics(idx))
+    if quote is None or quote.market_cap is None:
+        return out
+    mc = quote.market_cap
+    mci = _mcap_input(quote)
+    fy = _annual_periods(idx)
+    latest_fy = fy[0] if fy else None
+
+    # price multiples driven by TTM (else latest FY)
+    ni = _ttm_or_fy(idx, "NetIncomeLoss")
+    if ni:
+        out.append(_make("pe_ratio", _div(mc, ni[0]), ni[1], [mci] + ni[2]))
+        out.append(_make("earnings_yield", _div(ni[0], mc), ni[1], ni[2] + [mci]))
+    rev = _ttm_or_fy(idx, "Revenues")
+    if rev:
+        out.append(_make("ps_ratio", _div(mc, rev[0]), rev[1], [mci] + rev[2]))
+    eq = _fact(idx, "StockholdersEquity", latest_fy) if latest_fy else None
+    if eq:
+        out.append(_make("pb_ratio", _div(mc, eq.value), latest_fy, [mci, _in(eq)]))
+
+    # FCF / EV multiples on latest FY
+    if latest_fy:
+        fcf = _fcf(idx, latest_fy)
+        if fcf:
+            out.append(_make("p_fcf", _div(mc, fcf[0]), latest_fy, [mci] + fcf[1]))
+        td = _total_debt(idx, latest_fy)
+        cash = _fact(idx, "CashAndCashEquivalents", latest_fy)
+        ebitda = _ebitda(idx, latest_fy)
+        if td and cash and ebitda:
+            net_debt = td[0] - cash.value
+            ev = mc + net_debt
+            ev_inputs = [mci] + td[1] + [_in(cash)]
+            out.append(_make("ev_ebitda", _div(ev, ebitda[0]), latest_fy, ev_inputs + ebitda[1]))
+            if rev:
+                out.append(_make("ev_sales", _div(ev, rev[0]), rev[1], ev_inputs + rev[2]))
+        ni_fy = _fact(idx, "NetIncomeLoss", latest_fy)
+        div = _fact(idx, "DividendsPaid", latest_fy)
+        buyback = _fact(idx, "StockRepurchased", latest_fy)
+        if div:
+            out.append(_make("dividend_yield", _div(div.value, mc), latest_fy, [_in(div), mci]))
+            if ni_fy:
+                out.append(_make("payout_ratio", _div(div.value, ni_fy.value), latest_fy, [_in(div), _in(ni_fy)]))
+        if buyback:
+            out.append(_make("buyback_yield", _div(buyback.value, mc), latest_fy, [_in(buyback), mci]))
+        if div and buyback:
+            out.append(_make("total_shareholder_yield", _div(div.value + buyback.value, mc), latest_fy, [_in(div), _in(buyback), mci]))
+    return out
+
+
 # ----- entry point -----------------------------------------------------------
 
 
@@ -344,4 +428,5 @@ def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> l
         out += _growth(idx, period)
         out += _per_share(idx, period)
         out += _quality(idx, period)
+    out += _valuation(idx, quote)
     return [m for m in out if m]

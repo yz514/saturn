@@ -194,3 +194,46 @@ def test_effective_tax_rate_not_duplicated():
     f = _facts([("NetIncomeLoss", "FY2025", 200.0), ("IncomeTaxExpenseBenefit", "FY2025", 50.0)])
     etrs = [m for m in compute_metrics(f, None) if m.name == "effective_tax_rate" and m.fiscal_period == "FY2025"]
     assert len(etrs) == 1
+
+
+def _quote(market_cap=10_000.0):
+    return Quote(price=100.0, market_cap=market_cap, currency="USD", provenance=Provenance(source="yfinance"))
+
+
+def test_ttm_and_valuation():
+    rows = []
+    # 4 single quarters of revenue/net income/eps -> TTM
+    for i, q in enumerate(["Q1 FY2025", "Q2 FY2025", "Q3 FY2025", "Q4 FY2025"]):
+        rows += [("Revenues", q, 250.0), ("NetIncomeLoss", q, 50.0), ("EarningsPerShareDiluted", q, 1.0)]
+    rows += [
+        ("StockholdersEquity", "FY2025", 5000.0),
+        ("OperatingCashFlow", "FY2025", 1200.0),
+        ("CapitalExpenditures", "FY2025", 200.0),
+        ("DepreciationAndAmortization", "FY2025", 100.0),
+        ("OperatingIncomeLoss", "FY2025", 900.0),
+        ("LongTermDebt", "FY2025", 1000.0),
+        ("CashAndCashEquivalents", "FY2025", 400.0),
+        ("DividendsPaid", "FY2025", 100.0),
+        ("StockRepurchased", "FY2025", 300.0),
+        ("Revenues", "FY2025", 1000.0),
+        ("NetIncomeLoss", "FY2025", 200.0),
+    ]
+    ms = compute_metrics(_facts(rows), _quote(market_cap=10_000.0))
+    # TTM: revenue 1000, net income 200, eps 4
+    assert abs(_by_name(ms, "revenue_ttm", "TTM").value - 1000.0) < 1e-9
+    assert abs(_by_name(ms, "net_income_ttm", "TTM").value - 200.0) < 1e-9
+    assert abs(_by_name(ms, "eps_ttm", "TTM").value - 4.0) < 1e-9
+    # pe = 10000 / 200 = 50 ; ps = 10000/1000 = 10 ; pb = 10000/5000 = 2
+    assert abs(_by_name(ms, "pe_ratio", "TTM").value - 50.0) < 1e-9
+    assert abs(_by_name(ms, "ps_ratio", "TTM").value - 10.0) < 1e-9
+    assert abs(_by_name(ms, "pb_ratio", "FY2025").value - 2.0) < 1e-9
+    # net_debt = 600 ; EV = 10600 ; EBITDA = 1000 ; ev_ebitda = 10.6
+    assert abs(_by_name(ms, "ev_ebitda", "FY2025").value - 10.6) < 1e-9
+    # dividend_yield = 100/10000 = 0.01 ; buyback_yield = 300/10000 = 0.03 ; total = 0.04
+    assert abs(_by_name(ms, "dividend_yield", "FY2025").value - 0.01) < 1e-9
+    assert abs(_by_name(ms, "total_shareholder_yield", "FY2025").value - 0.04) < 1e-9
+
+
+def test_valuation_skipped_without_quote():
+    f = _facts([("NetIncomeLoss", "FY2025", 200.0)])
+    assert _by_name(compute_metrics(f, None), "pe_ratio", "TTM") is None
