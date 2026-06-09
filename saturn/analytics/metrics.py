@@ -206,6 +206,32 @@ def _leverage(idx, period) -> list[DerivedMetric | None]:
     return out
 
 
+def _efficiency(idx, period) -> list[DerivedMetric | None]:
+    out = [
+        _ratio(idx, period, "asset_turnover", "Revenues", "Assets"),
+        _ratio(idx, period, "inventory_turnover", "CostOfRevenue", "Inventory"),
+        _ratio(idx, period, "capex_intensity", "CapitalExpenditures", "Revenues"),
+    ]
+    # DSO is an annual figure (x365); skip for quarterly periods.
+    if period.startswith("FY"):
+        ar = _fact(idx, "AccountsReceivableNetCurrent", period)
+        rev = _fact(idx, "Revenues", period)
+        if ar and rev and rev.value != 0:
+            out.append(_make("days_sales_outstanding", ar.value / rev.value * 365, period, [_in(ar), _in(rev)]))
+    return out
+
+
+def _cash(idx, period) -> list[DerivedMetric | None]:
+    out: list[DerivedMetric | None] = []
+    fcf = _fcf(idx, period)
+    if fcf:
+        out.append(_make("fcf", fcf[0], period, fcf[1]))
+        ni = _fact(idx, "NetIncomeLoss", period)
+        if ni:
+            out.append(_make("fcf_conversion", _div(fcf[0], ni.value), period, fcf[1] + [_in(ni)]))
+    return out
+
+
 # ----- entry point -----------------------------------------------------------
 
 
@@ -217,4 +243,6 @@ def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> l
         out += _returns(idx, period)
         out += _liquidity(idx, period)
         out += _leverage(idx, period)
+        out += _efficiency(idx, period)
+        out += _cash(idx, period)
     return [m for m in out if m]

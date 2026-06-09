@@ -112,3 +112,26 @@ def test_liquidity_and_leverage():
     # net_debt_to_ebitda = 700 / (500+100) = 1.1667
     assert abs(_by_name(ms, "net_debt_to_ebitda", "FY2025").value - (700.0 / 600.0)) < 1e-9
     assert abs(_by_name(ms, "interest_coverage", "FY2025").value - 10.0) < 1e-9
+
+
+def test_efficiency_and_cash():
+    f = _facts([
+        ("Revenues", "FY2025", 1000.0),
+        ("Assets", "FY2025", 2000.0),
+        ("CostOfRevenue", "FY2025", 600.0),
+        ("Inventory", "FY2025", 300.0),
+        ("CapitalExpenditures", "FY2025", 100.0),
+        ("AccountsReceivableNetCurrent", "FY2025", 200.0),
+        ("OperatingCashFlow", "FY2025", 350.0),
+        ("NetIncomeLoss", "FY2025", 250.0),
+    ])
+    ms = compute_metrics(f, None)
+    assert abs(_by_name(ms, "asset_turnover", "FY2025").value - 0.5) < 1e-9
+    assert abs(_by_name(ms, "inventory_turnover", "FY2025").value - 2.0) < 1e-9
+    assert abs(_by_name(ms, "capex_intensity", "FY2025").value - 0.1) < 1e-9
+    # dso = 200 / 1000 * 365 = 73
+    assert abs(_by_name(ms, "days_sales_outstanding", "FY2025").value - 73.0) < 1e-9
+    # fcf = 350 - 100 = 250
+    assert abs(_by_name(ms, "fcf", "FY2025").value - 250.0) < 1e-9
+    # fcf_conversion = 250 / 250 = 1.0
+    assert abs(_by_name(ms, "fcf_conversion", "FY2025").value - 1.0) < 1e-9
