@@ -135,3 +135,33 @@ def test_efficiency_and_cash():
     assert abs(_by_name(ms, "fcf", "FY2025").value - 250.0) < 1e-9
     # fcf_conversion = 250 / 250 = 1.0
     assert abs(_by_name(ms, "fcf_conversion", "FY2025").value - 1.0) < 1e-9
+
+
+def test_growth_yoy_cagr_qoq():
+    f = _facts([
+        ("Revenues", "FY2025", 1200.0),
+        ("Revenues", "FY2024", 1000.0),
+        ("Revenues", "FY2022", 600.0),
+        ("EarningsPerShareDiluted", "FY2025", 5.0),
+        ("EarningsPerShareDiluted", "FY2024", 4.0),
+        ("OperatingCashFlow", "FY2025", 300.0),
+        ("CapitalExpenditures", "FY2025", 100.0),
+        ("OperatingCashFlow", "FY2024", 250.0),
+        ("CapitalExpenditures", "FY2024", 100.0),
+        ("Revenues", "Q2 FY2025", 320.0),
+        ("Revenues", "Q1 FY2025", 300.0),
+    ])
+    ms = compute_metrics(f, None)
+    assert abs(_by_name(ms, "revenue_growth_yoy", "FY2025").value - 0.2) < 1e-9
+    assert abs(_by_name(ms, "eps_growth_yoy", "FY2025").value - 0.25) < 1e-9
+    # fcf FY2025 = 200, FY2024 = 150 -> 0.3333
+    assert abs(_by_name(ms, "fcf_growth_yoy", "FY2025").value - (200.0 / 150.0 - 1)) < 1e-9
+    # revenue_cagr_3y at FY2025 over FY2022: (1200/600)^(1/3)-1
+    assert abs(_by_name(ms, "revenue_cagr_3y", "FY2025").value - ((1200.0 / 600.0) ** (1 / 3) - 1)) < 1e-9
+    # qoq at Q2 FY2025: 320/300 - 1
+    assert abs(_by_name(ms, "revenue_growth_qoq", "Q2 FY2025").value - (320.0 / 300.0 - 1)) < 1e-9
+
+
+def test_cagr_skips_nonpositive_base():
+    f = _facts([("EarningsPerShareDiluted", "FY2025", 5.0), ("EarningsPerShareDiluted", "FY2022", -1.0)])
+    assert _by_name(compute_metrics(f, None), "eps_cagr_3y", "FY2025") is None

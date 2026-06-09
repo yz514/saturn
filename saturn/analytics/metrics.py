@@ -232,6 +232,68 @@ def _cash(idx, period) -> list[DerivedMetric | None]:
     return out
 
 
+def _gr(a: float | None, b: float | None) -> float | None:
+    """Growth ratio a/b - 1, or None when b is missing/zero. Handles a == 0."""
+    if a is None or b is None or b == 0:
+        return None
+    return a / b - 1
+
+
+def _prev_fy(period: str, back: int = 1) -> str:
+    return f"FY{int(period[2:]) - back}"
+
+
+def _prev_quarter(period: str) -> str:
+    q, fy = period.split()
+    n, y = int(q[1]), int(fy[2:])
+    return f"Q4 FY{y - 1}" if n == 1 else f"Q{n - 1} FY{y}"
+
+
+def _yoy(idx, period, name, concept) -> DerivedMetric | None:
+    if period.startswith("FY"):
+        prev = _prev_fy(period)
+    else:
+        q, fy = period.split()
+        prev = f"{q} FY{int(fy[2:]) - 1}"   # same quarter, prior year
+    a = _fact(idx, concept, period)
+    b = _fact(idx, concept, prev)
+    if not a or not b:
+        return None
+    return _make(name, _gr(a.value, b.value), period, [_in(a), _in(b)])
+
+
+def _cagr(idx, period, name, concept, years=3) -> DerivedMetric | None:
+    if not period.startswith("FY"):
+        return None
+    a = _fact(idx, concept, period)
+    b = _fact(idx, concept, _prev_fy(period, years))
+    if not a or not b or a.value <= 0 or b.value <= 0:
+        return None
+    return _make(name, (a.value / b.value) ** (1 / years) - 1, period, [_in(a), _in(b)])
+
+
+def _growth(idx, period) -> list[DerivedMetric | None]:
+    out: list[DerivedMetric | None] = [
+        _yoy(idx, period, "revenue_growth_yoy", "Revenues"),
+        _yoy(idx, period, "eps_growth_yoy", "EarningsPerShareDiluted"),
+        _cagr(idx, period, "revenue_cagr_3y", "Revenues"),
+        _cagr(idx, period, "eps_cagr_3y", "EarningsPerShareDiluted"),
+    ]
+    # fcf_growth_yoy (annual): needs fcf at period and prior FY
+    if period.startswith("FY"):
+        cur = _fcf(idx, period)
+        prev = _fcf(idx, _prev_fy(period))
+        if cur and prev and prev[0] != 0:
+            out.append(_make("fcf_growth_yoy", cur[0] / prev[0] - 1, period, cur[1] + prev[1]))
+    # qoq (quarterly only)
+    if period.startswith("Q"):
+        a = _fact(idx, "Revenues", period)
+        b = _fact(idx, "Revenues", _prev_quarter(period))
+        if a and b:
+            out.append(_make("revenue_growth_qoq", _gr(a.value, b.value), period, [_in(a), _in(b)]))
+    return out
+
+
 # ----- entry point -----------------------------------------------------------
 
 
@@ -245,4 +307,5 @@ def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> l
         out += _leverage(idx, period)
         out += _efficiency(idx, period)
         out += _cash(idx, period)
+        out += _growth(idx, period)
     return [m for m in out if m]
