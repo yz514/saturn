@@ -140,6 +140,22 @@ def test_financial_table_is_bounded_per_concept():
     assert "most recent" in md.lower()
 
 
+def test_key_metrics_table_shows_newest_periods_when_unordered():
+    from saturn.models import DerivedMetric, Provenance
+    report = _sample_report()
+    prov = Provenance(source="Saturn (derived)")
+    # deliberately out of order; only the 2 newest annual should render
+    report.company.derived_metrics = [
+        DerivedMetric(name="net_margin", value=0.10, format="percent", fiscal_period="FY2021", formula="NetIncomeLoss / Revenues", provenance=prov),
+        DerivedMetric(name="net_margin", value=0.40, format="percent", fiscal_period="FY2024", formula="NetIncomeLoss / Revenues", provenance=prov),
+        DerivedMetric(name="net_margin", value=0.20, format="percent", fiscal_period="FY2022", formula="NetIncomeLoss / Revenues", provenance=prov),
+        DerivedMetric(name="net_margin", value=0.30, format="percent", fiscal_period="FY2023", formula="NetIncomeLoss / Revenues", provenance=prov),
+    ]
+    md = render(report)
+    assert "FY2024" in md and "FY2023" in md      # newest 2 kept
+    assert "FY2021" not in md and "FY2022" not in md  # older dropped
+
+
 def test_render_groups_financials_and_shows_events():
     md = render(_sample_report())  # uses _mock_dossier, has a quarterly fact + event
     assert "Q2 FY2025" in md                                   # quarterly row present

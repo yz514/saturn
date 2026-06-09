@@ -66,6 +66,8 @@ def _select_report_metrics(metrics: list) -> list:
         annual = [m for m in items if (m.fiscal_period or "").startswith("FY")]
         quarterly = [m for m in items if (m.fiscal_period or "").startswith("Q")]
         other = [m for m in items if not (m.fiscal_period or "").startswith(("FY", "Q"))]
+        annual.sort(key=lambda m: _annual_sort_key(m.fiscal_period), reverse=True)
+        quarterly.sort(key=lambda m: _quarter_sort_key(m.fiscal_period), reverse=True)
         out += annual[:_RPT_MAX_METRIC_ANNUAL] + quarterly[:_RPT_MAX_METRIC_QUARTERS] + other
     return out
 
