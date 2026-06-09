@@ -40,6 +40,8 @@ _CTX_MAX_QUARTERS = 4
 _CTX_SECTION_CHARS = 1200
 _CTX_MAX_EVENTS = 6
 _CTX_EVENT_CHARS = 500
+_CTX_MAX_METRIC_ANNUAL = 3
+_CTX_MAX_METRIC_QUARTERS = 2
 
 
 def _fy_num(period: str) -> int:
@@ -109,6 +111,22 @@ def _company_context(dossier: CompanyDossier) -> str:
             lines.append(
                 f"- {fact.concept} {period}: {fact.value} {fact.unit or ''} (source: {cite})"
             )
+
+    if dossier.derived_metrics:
+        lines.append("\nDERIVED METRICS (computed by Saturn from as-reported data):")
+        # bound display: recent annual + quarterly per metric, plus point-in-time
+        by_name: dict[str, list] = {}
+        for m in dossier.derived_metrics:
+            by_name.setdefault(m.name, []).append(m)
+        for name, metrics in by_name.items():
+            annual = [m for m in metrics if (m.fiscal_period or "").startswith("FY")][:_CTX_MAX_METRIC_ANNUAL]
+            quarterly = [m for m in metrics if (m.fiscal_period or "").startswith("Q")][:_CTX_MAX_METRIC_QUARTERS]
+            other = [m for m in metrics if not (m.fiscal_period or "").startswith(("FY", "Q"))]
+            for m in annual + quarterly + other:
+                period = m.fiscal_period or "current"
+                lines.append(
+                    f"- {m.name} [{period}]: {m.value} ({m.formula}; source: Saturn derived)"
+                )
 
     if dossier.filing_sections:
         lines.append("\nFILING SECTIONS:")
