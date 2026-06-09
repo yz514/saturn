@@ -72,6 +72,27 @@ class MaterialEvent(BaseModel):
     provenance: Provenance
 
 
+class MetricInput(BaseModel):
+    """One source fact a derived metric consumed (for verification)."""
+
+    concept: str
+    fiscal_period: str | None = None
+    value: float
+    source: str
+
+
+class DerivedMetric(BaseModel):
+    """A deterministically computed metric carrying its formula and inputs."""
+
+    name: str
+    value: float
+    format: str  # percent | ratio | currency | x | per_share
+    fiscal_period: str | None = None
+    formula: str
+    inputs: list[MetricInput] = Field(default_factory=list)
+    provenance: Provenance
+
+
 class SourceGap(BaseModel):
     """A source that could not contribute, recorded instead of crashing."""
 
@@ -93,6 +114,7 @@ class CompanyDossier(BaseModel):
     fundamentals: Fundamentals | None = None
     filing_sections: list[FilingSection] = Field(default_factory=list)
     material_events: list[MaterialEvent] = Field(default_factory=list)
+    derived_metrics: list[DerivedMetric] = Field(default_factory=list)
     macro: MacroSnapshot | None = None
     news: list[NewsItem] = Field(default_factory=list)
     gaps: list[SourceGap] = Field(default_factory=list)

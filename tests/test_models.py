@@ -81,3 +81,25 @@ def test_dossier_has_material_events_default():
 
     d = CompanyDossier(ticker="NVDA", name="NVIDIA Corporation", generated_at=_date(2026, 6, 6))
     assert d.material_events == []
+
+
+def test_derived_metric_and_input_models():
+    from saturn.models import DerivedMetric, MetricInput, Provenance, CompanyDossier
+    from datetime import date
+
+    m = DerivedMetric(
+        name="gross_margin",
+        value=0.744,
+        format="percent",
+        fiscal_period="Q2 FY2026",
+        formula="GrossProfit / Revenues",
+        inputs=[MetricInput(concept="GrossProfit", fiscal_period="Q2 FY2026", value=17_755e6, source="SEC EDGAR")],
+        provenance=Provenance(source="Saturn (derived)", as_of=date(2026, 6, 8)),
+    )
+    assert m.value == 0.744 and m.format == "percent"
+    assert m.inputs[0].concept == "GrossProfit"
+
+    d = CompanyDossier(ticker="X", name="X", generated_at=date(2026, 6, 8))
+    assert d.derived_metrics == []          # default empty
+    d.derived_metrics = [m]
+    assert d.derived_metrics[0].name == "gross_margin"
