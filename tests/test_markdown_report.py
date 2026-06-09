@@ -35,25 +35,44 @@ def _sample_report() -> ResearchReport:
 def test_render_has_all_sections():
     md = render(_sample_report())
     expected = [
-        "# NVDA Equity Research Report",
         "## 1. Executive Summary",
         "## 2. Company Overview",
         "## 3. Business Segments",
         "## 4. Recent Market Performance",
         "## 5. Financial Snapshot",
-        "## 6. Recent News and Catalysts",
-        "## 7. Bull Thesis",
-        "## 8. Bear Thesis",
-        "## 9. Key Risks",
-        "## 10. Valuation Discussion",
-        "## 11. Open Questions",
-        "## 12. Final View",
-        "## 13. Macro Snapshot",
-        "## 14. Material Events (SEC 8-K)",
-        "## 15. Sources",
+        "## 6. Key Metrics",
+        "## 7. Recent News and Catalysts",
+        "## 8. Bull Thesis",
+        "## 9. Bear Thesis",
+        "## 10. Key Risks",
+        "## 11. Valuation Discussion",
+        "## 12. Open Questions",
+        "## 13. Final View",
+        "## 14. Macro Snapshot",
+        "## 15. Material Events (SEC 8-K)",
+        "## 16. Sources",
     ]
     for header in expected:
         assert header in md, f"missing: {header}"
+
+
+def test_render_key_metrics_section():
+    from saturn.models import DerivedMetric, MetricInput, Provenance
+    report = _sample_report()
+    report.company.derived_metrics = [
+        DerivedMetric(name="net_margin", value=0.25, format="percent", fiscal_period="FY2024",
+                      formula="NetIncomeLoss / Revenues",
+                      inputs=[MetricInput(concept="NetIncomeLoss", fiscal_period="FY2024", value=1.0, source="SEC EDGAR")],
+                      provenance=Provenance(source="Saturn (derived)")),
+        DerivedMetric(name="pe_ratio", value=20.0, format="x", fiscal_period="TTM",
+                      formula="market_cap / net_income_ttm",
+                      inputs=[], provenance=Provenance(source="Saturn (derived)")),
+    ]
+    md = render(report)
+    assert "## 6. Key Metrics" in md
+    assert "net_margin" in md and "25.0%" in md          # percent formatting
+    assert "20.0x" in md                                 # multiple formatting
+    assert "docs/metrics.md" in md                       # methodology link
 
 
 def test_render_includes_quote_and_financials_table():
@@ -81,7 +100,7 @@ def test_render_shows_data_gaps_section():
     report = _sample_report()
     report.company.gaps = [SourceGap(source="edgar", reason="edgar adapter not configured")]
     md = render(report)
-    assert "## 16. Data Gaps" in md
+    assert "## 17. Data Gaps" in md
     assert "**edgar**: edgar adapter not configured" in md
 
 
@@ -125,6 +144,6 @@ def test_render_groups_financials_and_shows_events():
     md = render(_sample_report())  # uses _mock_dossier, has a quarterly fact + event
     assert "Q2 FY2025" in md                                   # quarterly row present
     assert md.index("FY2024") < md.index("Q2 FY2025")  # annual grouped before quarterly
-    assert "## 14. Material Events (SEC 8-K)" in md            # new section
+    assert "## 15. Material Events (SEC 8-K)" in md            # renumbered
     assert "Results of Operations and Financial Condition" in md
-    assert "## 15. Sources" in md                              # renumbered
+    assert "## 16. Sources" in md                              # renumbered

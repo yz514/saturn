@@ -19,6 +19,18 @@ def _fmt_money(value: float | None) -> str:
     return f"${value:,.0f}" if value is not None else "N/A"
 
 
+def _fmt_metric(value: float, fmt: str) -> str:
+    if fmt == "percent":
+        return f"{value * 100:.1f}%"
+    if fmt == "x":
+        return f"{value:.1f}x"
+    if fmt == "currency":
+        return _fmt_money(value)
+    if fmt == "per_share":
+        return f"${value:,.2f}"
+    return f"{value:.2f}"   # ratio
+
+
 def _annual_sort_key(period: str) -> int:
     """'FY2024' -> 2024; non-FY periods sort last."""
     try:
@@ -34,6 +46,28 @@ def _quarter_sort_key(period: str) -> tuple[int, int]:
         return (int(fy_part.replace("FY", "")), int(q_part[1]))
     except (ValueError, AttributeError, IndexError):
         return (-1, -1)
+
+
+_RPT_MAX_METRIC_ANNUAL = 2
+_RPT_MAX_METRIC_QUARTERS = 1
+
+
+def _select_report_metrics(metrics: list) -> list:
+    by_name: dict[str, list] = {}
+    order: list[str] = []
+    for m in metrics:
+        if m.name not in by_name:
+            by_name[m.name] = []
+            order.append(m.name)
+        by_name[m.name].append(m)
+    out: list = []
+    for name in order:
+        items = by_name[name]
+        annual = [m for m in items if (m.fiscal_period or "").startswith("FY")]
+        quarterly = [m for m in items if (m.fiscal_period or "").startswith("Q")]
+        other = [m for m in items if not (m.fiscal_period or "").startswith(("FY", "Q"))]
+        out += annual[:_RPT_MAX_METRIC_ANNUAL] + quarterly[:_RPT_MAX_METRIC_QUARTERS] + other
+    return out
 
 
 def _select_report_facts(facts: list) -> list:
@@ -108,7 +142,26 @@ def render(report: ResearchReport) -> str:
         out.append("")
     out += [a.financial_snapshot, ""]
 
-    out += ["## 6. Recent News and Catalysts", ""]
+    out += ["## 6. Key Metrics", ""]
+    if c.derived_metrics:
+        out.append("| Metric | Period | Value | Formula |")
+        out.append("| --- | --- | --- | --- |")
+        for m in _select_report_metrics(c.derived_metrics):
+            out.append(
+                f"| {m.name} | {m.fiscal_period or 'current'} | "
+                f"{_fmt_metric(m.value, m.format)} | {m.formula} |"
+            )
+        out.append("")
+        out.append(
+            f"_Showing the most recent {_RPT_MAX_METRIC_ANNUAL} annual and "
+            f"{_RPT_MAX_METRIC_QUARTERS} quarterly periods per metric. "
+            "Definitions & formulas: docs/metrics.md_"
+        )
+    else:
+        out.append("_No derived metrics available._")
+    out.append("")
+
+    out += ["## 7. Recent News and Catalysts", ""]
     if c.news:
         for item in c.news:
             suffix = f" — {item.publisher}" if item.publisher else ""
@@ -120,14 +173,14 @@ def render(report: ResearchReport) -> str:
         out.append("_No recent news available._")
     out.append("")
 
-    out += ["## 7. Bull Thesis", "", d.bull_thesis, ""]
-    out += ["## 8. Bear Thesis", "", d.bear_thesis, ""]
-    out += ["## 9. Key Risks", "", a.key_risks, ""]
-    out += ["## 10. Valuation Discussion", "", a.valuation_discussion, ""]
-    out += ["## 11. Open Questions", "", a.open_questions, ""]
-    out += ["## 12. Final View", "", d.final_view, ""]
+    out += ["## 8. Bull Thesis", "", d.bull_thesis, ""]
+    out += ["## 9. Bear Thesis", "", d.bear_thesis, ""]
+    out += ["## 10. Key Risks", "", a.key_risks, ""]
+    out += ["## 11. Valuation Discussion", "", a.valuation_discussion, ""]
+    out += ["## 12. Open Questions", "", a.open_questions, ""]
+    out += ["## 13. Final View", "", d.final_view, ""]
 
-    out += ["## 13. Macro Snapshot", ""]
+    out += ["## 14. Macro Snapshot", ""]
     if c.macro and c.macro.series:
         out.append("| Series | Latest | As of | Source |")
         out.append("| --- | --- | --- | --- |")
@@ -141,7 +194,7 @@ def render(report: ResearchReport) -> str:
         out.append("_No macro data available._")
         out.append("")
 
-    out += ["## 14. Material Events (SEC 8-K)", ""]
+    out += ["## 15. Material Events (SEC 8-K)", ""]
     if c.material_events:
         for ev in c.material_events:
             labels = ", ".join(ev.item_codes)
@@ -161,7 +214,7 @@ def render(report: ResearchReport) -> str:
         out.append("_No material events in the last 12 months._")
         out.append("")
 
-    out += ["## 15. Sources", ""]
+    out += ["## 16. Sources", ""]
     if report.sources:
         out += [f"- {s}" for s in report.sources]
     else:
@@ -169,7 +222,7 @@ def render(report: ResearchReport) -> str:
     out.append("")
 
     if c.gaps:
-        out += ["## 16. Data Gaps", ""]
+        out += ["## 17. Data Gaps", ""]
         out += [f"- **{g.source}**: {g.reason}" for g in c.gaps]
         out.append("")
 
