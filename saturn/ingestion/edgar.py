@@ -55,6 +55,8 @@ EDGAR_CONCEPTS: dict[str, dict] = {
     "StockholdersEquity": {"unit": "USD", "tags": ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"]},
     "RetainedEarnings": {"unit": "USD", "tags": ["RetainedEarningsAccumulatedDeficit"]},
     "CashAndCashEquivalents": {"unit": "USD", "tags": ["CashAndCashEquivalentsAtCarryingValue"]},
+    "DebtCurrent": {"unit": "USD", "tags": ["DebtCurrent", "ShortTermBorrowings", "LongTermDebtCurrent"]},
+    "AccountsReceivableNetCurrent": {"unit": "USD", "tags": ["AccountsReceivableNetCurrent"]},
     # Cash flow (USD)
     "OperatingCashFlow": {"unit": "USD", "tags": ["NetCashProvidedByUsedInOperatingActivities"]},
     "CapitalExpenditures": {"unit": "USD", "tags": ["PaymentsToAcquirePropertyPlantAndEquipment"]},
