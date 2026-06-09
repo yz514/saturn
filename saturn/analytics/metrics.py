@@ -80,11 +80,17 @@ def _annual_periods(idx) -> list[str]:
 def _quarterly_periods(idx) -> list[str]:
     ps = {p for (_c, p) in idx if p.startswith("Q")}
 
-    def key(p: str) -> tuple[int, int]:
-        q, fy = p.split()
-        return (int(fy[2:]), int(q[1]))
+    def key(p: str) -> tuple[int, int] | None:
+        parts = p.split()
+        if len(parts) != 2 or not parts[1].startswith("FY"):
+            return None
+        try:
+            return (int(parts[1][2:]), int(parts[0][1:]))
+        except ValueError:
+            return None
 
-    return sorted(ps, key=key, reverse=True)
+    keyed = [(key(p), p) for p in ps]
+    return [p for k, p in sorted((kp for kp in keyed if kp[0] is not None), reverse=True)]
 
 
 def _fcf(idx, period) -> tuple[float, list[MetricInput]] | None:

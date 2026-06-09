@@ -41,6 +41,22 @@ def test_zero_denominator_and_missing_input_skip():
     assert _by_name(ms, "gross_margin", "FY2025") is None   # zero revenue -> skipped
     f2 = _facts([("Revenues", "FY2025", 1000.0)])           # no GrossProfit
     assert _by_name(compute_metrics(f2, None), "gross_margin", "FY2025") is None
+    # sanity: a valid metric is still produced alongside the skipped one
+    f3 = _facts([("GrossProfit", "FY2025", 600.0), ("Revenues", "FY2025", 1000.0), ("NetIncomeLoss", "FY2025", 200.0)])
+    assert _by_name(compute_metrics(f3, None), "net_margin", "FY2025") is not None
+
+
+def test_ebitda_and_fcf_margins():
+    f = _facts([
+        ("Revenues", "FY2025", 1000.0),
+        ("OperatingIncomeLoss", "FY2025", 250.0),
+        ("DepreciationAndAmortization", "FY2025", 100.0),
+        ("OperatingCashFlow", "FY2025", 300.0),
+        ("CapitalExpenditures", "FY2025", 100.0),
+    ])
+    ms = compute_metrics(f, None)
+    assert abs(_by_name(ms, "ebitda_margin", "FY2025").value - 0.35) < 1e-9   # (250+100)/1000
+    assert abs(_by_name(ms, "fcf_margin", "FY2025").value - 0.2) < 1e-9       # (300-100)/1000
 
 
 def test_negative_value_passes_through():
