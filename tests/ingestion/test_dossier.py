@@ -154,7 +154,8 @@ def test_mock_dossier_has_derived_metrics():
     assert all(m.provenance.source == "Saturn (derived)" for m in d.derived_metrics)
 
 
-def test_build_dossier_attaches_metrics(monkeypatch):
+def test_build_dossier_attaches_metrics():
+    from saturn.ingestion.dossier import build_dossier
     from saturn.models import Fundamentals, FinancialFact, Provenance, Quote
 
     prov = Provenance(source="SEC EDGAR")
@@ -163,9 +164,10 @@ def test_build_dossier_attaches_metrics(monkeypatch):
         FinancialFact(concept="NetIncomeLoss", value=200.0, unit="USD", fiscal_period="FY2025", provenance=prov),
     ])
     quote = Quote(price=10.0, market_cap=5000.0, currency="USD", provenance=Provenance(source="yfinance"))
-    monkeypatch.setattr("saturn.ingestion.dossier.fetch_quote", lambda t, *, mock: quote)
-    monkeypatch.setattr("saturn.ingestion.dossier.fetch_edgar", lambda t: {"fundamentals": fund, "filing_sections": [], "material_events": [], "name": "X", "cik": "1"})
-    monkeypatch.setattr("saturn.ingestion.dossier.fetch_fred", lambda t: None)
-
-    d = build_dossier("X")
+    d = build_dossier(
+        "X",
+        quote_fn=lambda t, *, mock: quote,
+        edgar_fn=lambda t: {"fundamentals": fund, "filing_sections": [], "material_events": [], "name": "X", "cik": "1"},
+        fred_fn=lambda t: None,
+    )
     assert any(m.name == "net_margin" and m.fiscal_period == "FY2025" for m in d.derived_metrics)

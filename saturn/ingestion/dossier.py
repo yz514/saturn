@@ -9,7 +9,6 @@ while real adapters are added incrementally.
 from __future__ import annotations
 
 import logging
-import sys
 from datetime import date
 from typing import Callable
 
@@ -33,12 +32,6 @@ from saturn.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Originals captured at import time; used to detect when a caller relies on the
-# default adapter (so monkeypatching the module-level name is also honoured).
-_ORIG_FETCH_QUOTE = fetch_quote
-_ORIG_FETCH_EDGAR = fetch_edgar
-_ORIG_FETCH_FRED = fetch_fred
 
 
 def _mock_dossier(ticker: str) -> CompanyDossier:
@@ -124,17 +117,6 @@ def build_dossier(
     if mock:
         logger.info("dossier(mock): %s", ticker)
         return _mock_dossier(ticker)
-
-    # Allow monkeypatching of module-level names: when the caller used the
-    # default adapter (i.e., they didn't pass an explicit override), re-read
-    # the current module attribute so test monkeypatching is honoured.
-    _mod = sys.modules[__name__]
-    if quote_fn is _ORIG_FETCH_QUOTE:
-        quote_fn = getattr(_mod, "fetch_quote")
-    if edgar_fn is _ORIG_FETCH_EDGAR:
-        edgar_fn = getattr(_mod, "fetch_edgar")
-    if fred_fn is _ORIG_FETCH_FRED:
-        fred_fn = getattr(_mod, "fetch_fred")
 
     ident = identity or {}
     gaps = []
