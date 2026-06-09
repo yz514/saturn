@@ -144,8 +144,6 @@ def _returns(idx, period) -> list[DerivedMetric | None]:
     if oi and assets and lc:
         out.append(_make("roce", _div(oi.value, assets.value - lc.value), period, [_in(oi), _in(assets), _in(lc)]))
     etr = _effective_tax_rate_value(idx, period)
-    if etr:
-        out.append(_make("effective_tax_rate", etr[0], period, etr[1]))
     eq = _fact(idx, "StockholdersEquity", period)
     ltd = _fact(idx, "LongTermDebt", period)
     if oi and etr and eq and ltd:
@@ -294,6 +292,42 @@ def _growth(idx, period) -> list[DerivedMetric | None]:
     return out
 
 
+def _per_share(idx, period) -> list[DerivedMetric | None]:
+    out: list[DerivedMetric | None] = []
+    sh = _fact(idx, "WeightedAverageSharesDiluted", period)
+    if not sh:
+        return out
+    fcf = _fcf(idx, period)
+    if fcf:
+        out.append(_make("fcf_per_share", _div(fcf[0], sh.value), period, fcf[1] + [_in(sh)]))
+    eq = _fact(idx, "StockholdersEquity", period)
+    if eq:
+        out.append(_make("book_value_per_share", _div(eq.value, sh.value), period, [_in(eq), _in(sh)]))
+    return out
+
+
+def _quality(idx, period) -> list[DerivedMetric | None]:
+    out: list[DerivedMetric | None] = []
+    etr = _effective_tax_rate_value(idx, period)
+    if etr:
+        out.append(_make("effective_tax_rate", etr[0], period, etr[1]))
+    if period.startswith("FY"):
+        a = _fact(idx, "WeightedAverageSharesDiluted", period)
+        b = _fact(idx, "WeightedAverageSharesDiluted", _prev_fy(period))
+        if a and b:
+            out.append(_make("share_count_change_yoy", _gr(a.value, b.value), period, [_in(a), _in(b)]))
+    fcf = _fcf(idx, period)
+    div = _fact(idx, "DividendsPaid", period)
+    if fcf and div:
+        out.append(_make("dividend_coverage", _div(fcf[0], div.value), period, fcf[1] + [_in(div)]))
+    ni = _fact(idx, "NetIncomeLoss", period)
+    ocf = _fact(idx, "OperatingCashFlow", period)
+    assets = _fact(idx, "Assets", period)
+    if ni and ocf and assets:
+        out.append(_make("accruals_ratio", _div(ni.value - ocf.value, assets.value), period, [_in(ni), _in(ocf), _in(assets)]))
+    return out
+
+
 # ----- entry point -----------------------------------------------------------
 
 
@@ -308,4 +342,6 @@ def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> l
         out += _efficiency(idx, period)
         out += _cash(idx, period)
         out += _growth(idx, period)
+        out += _per_share(idx, period)
+        out += _quality(idx, period)
     return [m for m in out if m]

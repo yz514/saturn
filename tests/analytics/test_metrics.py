@@ -165,3 +165,32 @@ def test_growth_yoy_cagr_qoq():
 def test_cagr_skips_nonpositive_base():
     f = _facts([("EarningsPerShareDiluted", "FY2025", 5.0), ("EarningsPerShareDiluted", "FY2022", -1.0)])
     assert _by_name(compute_metrics(f, None), "eps_cagr_3y", "FY2025") is None
+
+
+def test_per_share_and_quality():
+    f = _facts([
+        ("OperatingCashFlow", "FY2025", 300.0),
+        ("CapitalExpenditures", "FY2025", 100.0),
+        ("WeightedAverageSharesDiluted", "FY2025", 100.0),
+        ("WeightedAverageSharesDiluted", "FY2024", 80.0),
+        ("StockholdersEquity", "FY2025", 1000.0),
+        ("NetIncomeLoss", "FY2025", 250.0),
+        ("IncomeTaxExpenseBenefit", "FY2025", 50.0),
+        ("Assets", "FY2025", 2500.0),
+        ("DividendsPaid", "FY2025", 50.0),
+    ])
+    ms = compute_metrics(f, None)
+    assert abs(_by_name(ms, "fcf_per_share", "FY2025").value - 2.0) < 1e-9      # 200/100
+    assert abs(_by_name(ms, "book_value_per_share", "FY2025").value - 10.0) < 1e-9
+    # share_count_change_yoy = 100/80 - 1 = 0.25
+    assert abs(_by_name(ms, "share_count_change_yoy", "FY2025").value - 0.25) < 1e-9
+    # dividend_coverage = fcf 200 / dividends 50 = 4.0
+    assert abs(_by_name(ms, "dividend_coverage", "FY2025").value - 4.0) < 1e-9
+    # accruals_ratio = (250 - 300) / 2500 = -0.02
+    assert abs(_by_name(ms, "accruals_ratio", "FY2025").value - (-0.02)) < 1e-9
+
+
+def test_effective_tax_rate_not_duplicated():
+    f = _facts([("NetIncomeLoss", "FY2025", 200.0), ("IncomeTaxExpenseBenefit", "FY2025", 50.0)])
+    etrs = [m for m in compute_metrics(f, None) if m.name == "effective_tax_rate" and m.fiscal_period == "FY2025"]
+    assert len(etrs) == 1
