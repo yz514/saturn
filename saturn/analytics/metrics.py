@@ -121,6 +121,42 @@ def _profitability(idx, period) -> list[DerivedMetric | None]:
     return out
 
 
+def _effective_tax_rate_value(idx, period) -> tuple[float, list[MetricInput]] | None:
+    ni = _fact(idx, "NetIncomeLoss", period)
+    tax = _fact(idx, "IncomeTaxExpenseBenefit", period)
+    if not ni or not tax:
+        return None
+    pretax = ni.value + tax.value
+    v = _div(tax.value, pretax)
+    if v is None:
+        return None
+    return (v, [_in(tax), _in(ni)])
+
+
+def _returns(idx, period) -> list[DerivedMetric | None]:
+    out = [
+        _ratio(idx, period, "roe", "NetIncomeLoss", "StockholdersEquity"),
+        _ratio(idx, period, "roa", "NetIncomeLoss", "Assets"),
+    ]
+    assets = _fact(idx, "Assets", period)
+    lc = _fact(idx, "LiabilitiesCurrent", period)
+    oi = _fact(idx, "OperatingIncomeLoss", period)
+    if oi and assets and lc:
+        out.append(_make("roce", _div(oi.value, assets.value - lc.value), period, [_in(oi), _in(assets), _in(lc)]))
+    etr = _effective_tax_rate_value(idx, period)
+    if etr:
+        out.append(_make("effective_tax_rate", etr[0], period, etr[1]))
+    eq = _fact(idx, "StockholdersEquity", period)
+    ltd = _fact(idx, "LongTermDebt", period)
+    if oi and etr and eq and ltd:
+        dc = _fact(idx, "DebtCurrent", period)
+        total_debt = ltd.value + (dc.value if dc else 0.0)
+        nopat = oi.value * (1 - etr[0])
+        inputs = [_in(oi), _in(eq), _in(ltd)] + ([_in(dc)] if dc else [])
+        out.append(_make("roic", _div(nopat, total_debt + eq.value), period, inputs))
+    return out
+
+
 # ----- entry point -----------------------------------------------------------
 
 
@@ -129,4 +165,5 @@ def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> l
     out: list[DerivedMetric | None] = []
     for period in _annual_periods(idx) + _quarterly_periods(idx):
         out += _profitability(idx, period)
+        out += _returns(idx, period)
     return [m for m in out if m]

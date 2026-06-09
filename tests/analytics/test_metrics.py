@@ -63,3 +63,26 @@ def test_negative_value_passes_through():
     f = _facts([("Revenues", "FY2025", 1000.0), ("NetIncomeLoss", "FY2025", -300.0)])
     nm = _by_name(compute_metrics(f, None), "net_margin", "FY2025")
     assert nm is not None and abs(nm.value - (-0.3)) < 1e-9
+
+
+def test_returns_and_effective_tax_rate():
+    f = _facts([
+        ("NetIncomeLoss", "FY2025", 200.0),
+        ("StockholdersEquity", "FY2025", 1000.0),
+        ("Assets", "FY2025", 2500.0),
+        ("LiabilitiesCurrent", "FY2025", 500.0),
+        ("OperatingIncomeLoss", "FY2025", 300.0),
+        ("IncomeTaxExpenseBenefit", "FY2025", 50.0),
+        ("LongTermDebt", "FY2025", 400.0),
+        ("DebtCurrent", "FY2025", 100.0),
+    ])
+    ms = compute_metrics(f, None)
+    assert abs(_by_name(ms, "roe", "FY2025").value - 0.20) < 1e-9
+    assert abs(_by_name(ms, "roa", "FY2025").value - 0.08) < 1e-9
+    # effective tax rate = 50 / (200 + 50) = 0.20
+    etr = _by_name(ms, "effective_tax_rate", "FY2025")
+    assert abs(etr.value - 0.20) < 1e-9
+    # roce = 300 / (2500 - 500) = 0.15
+    assert abs(_by_name(ms, "roce", "FY2025").value - 0.15) < 1e-9
+    # roic = (300 * (1 - 0.20)) / (500 + 1000) = 240 / 1500 = 0.16
+    assert abs(_by_name(ms, "roic", "FY2025").value - 0.16) < 1e-9
