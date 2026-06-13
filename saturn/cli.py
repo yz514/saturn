@@ -87,6 +87,21 @@ def doctor(
         raise typer.Exit(1)
 
 
+@app.command()
+def metrics(
+    write: bool = typer.Option(False, "--write", help="Regenerate docs/metrics.md from the catalog."),
+) -> None:
+    """Print the derived-metric reference (or regenerate docs/metrics.md)."""
+    import saturn.analytics.catalog as catalog
+
+    content = catalog.render_metrics_reference()
+    if write:
+        catalog.METRICS_DOC_PATH.write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote {catalog.METRICS_DOC_PATH}")
+    else:
+        typer.echo(content)
+
+
 def main() -> None:
     app()
 

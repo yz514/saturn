@@ -12,6 +12,7 @@ import logging
 from datetime import date
 from typing import Callable
 
+from saturn.analytics.metrics import compute_metrics
 from saturn.ingestion.dispatch import route_to_source
 from saturn.ingestion.edgar import fetch_edgar
 from saturn.ingestion.errors import DataUnavailable
@@ -41,7 +42,7 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
         as_of=date(2025, 2, 21),
     )
     prov_f = Provenance(source="FRED (mock)", as_of=date(2026, 5, 1))
-    return CompanyDossier(
+    dossier = CompanyDossier(
         ticker=ticker,
         cik="0001045810",
         name="NVIDIA Corporation",
@@ -87,6 +88,8 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
         news=[NewsItem(title="[MOCK] NVIDIA announces next-gen architecture", publisher="MockWire", link="https://example.com/mock")],
         generated_at=date.today(),
     )
+    dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote)
+    return dossier
 
 
 def build_dossier(
@@ -156,7 +159,7 @@ def build_dossier(
             type(edgar_result).__name__,
         )
 
-    return CompanyDossier(
+    dossier = CompanyDossier(
         ticker=ticker,
         cik=ident.get("cik") or edgar_cik,
         name=ident.get("name") or edgar_name or ticker,
@@ -173,3 +176,5 @@ def build_dossier(
         gaps=gaps,
         generated_at=date.today(),
     )
+    dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote)
+    return dossier

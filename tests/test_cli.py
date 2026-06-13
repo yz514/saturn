@@ -71,3 +71,25 @@ def test_research_handles_llm_response_error(monkeypatch):
     assert result.exit_code == 1
     assert "malformed or truncated JSON" in result.output
     assert "Traceback" not in result.output
+
+
+def test_metrics_command_prints_reference():
+    from typer.testing import CliRunner
+    from saturn.cli import app
+
+    result = CliRunner().invoke(app, ["metrics"])
+    assert result.exit_code == 0
+    assert "Saturn Metric Definitions" in result.stdout
+    assert "gross_margin" in result.stdout
+
+
+def test_metrics_command_write_regenerates_doc(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+    from saturn.cli import app
+    import saturn.analytics.catalog as catalog
+
+    target = tmp_path / "metrics.md"
+    monkeypatch.setattr(catalog, "METRICS_DOC_PATH", target)
+    result = CliRunner().invoke(app, ["metrics", "--write"])
+    assert result.exit_code == 0
+    assert target.read_text(encoding="utf-8") == catalog.render_metrics_reference()

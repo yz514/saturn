@@ -208,6 +208,24 @@ def test_quarterly_ytd_only_flow_is_dropped_not_mislabeled():
     assert q == []  # YTD-only quarterly row dropped, not mislabeled as a single quarter
 
 
+def test_parse_includes_debt_current_and_receivables():
+    payload = {
+        "cik": 1045810,
+        "facts": {"us-gaap": {
+            "DebtCurrent": {"units": {"USD": [
+                {"end": "2025-12-31", "val": 1_000, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2026-02-15"},
+            ]}},
+            "AccountsReceivableNetCurrent": {"units": {"USD": [
+                {"end": "2025-12-31", "val": 2_000, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2026-02-15"},
+            ]}},
+        }},
+    }
+    f = _parse_companyfacts(payload)
+    concepts = {x.concept for x in f.facts}
+    assert "DebtCurrent" in concepts
+    assert "AccountsReceivableNetCurrent" in concepts
+
+
 def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
     from datetime import date as _date
 

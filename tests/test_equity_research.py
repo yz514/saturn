@@ -183,3 +183,13 @@ def test_analyze_handles_fenced_json_with_list_field():
     result = analyze(_mock_dossier("NVDA"), _ListFieldClient(fenced=True))
     assert result.open_questions == "q1\nq2\nq3"
     assert result.executive_summary == "e"
+
+
+def test_company_context_includes_derived_metrics():
+    from saturn.ingestion.dossier import _mock_dossier
+    from saturn.workflows.equity_research import _company_context
+
+    ctx = _company_context(_mock_dossier("NVDA"))
+    assert "DERIVED METRICS" in ctx
+    assert "net_margin" in ctx
+    assert "Saturn derived" in ctx       # provenance label shown
