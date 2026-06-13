@@ -134,6 +134,11 @@ def _effective_tax_rate_value(idx, period) -> tuple[float, list[MetricInput]] | 
 
 
 def _returns(idx, period) -> list[DerivedMetric | None]:
+    # roe/roa/roce/roic divide a period FLOW (earnings/operating income) by a
+    # point-in-time STOCK (equity/assets/capital); only meaningful annually — a
+    # single quarter's flow would understate the ratio ~4x.
+    if not period.startswith("FY"):
+        return []
     out = [
         _ratio(idx, period, "roe", "NetIncomeLoss", "StockholdersEquity"),
         _ratio(idx, period, "roa", "NetIncomeLoss", "Assets"),
@@ -197,21 +202,25 @@ def _leverage(idx, period) -> list[DerivedMetric | None]:
         out.append(_make("debt_to_assets", _div(td[0], assets.value), period, td[1] + [_in(assets)]))
     if td and cash:
         out.append(_make("net_debt", td[0] - cash.value, period, td[1] + [_in(cash)]))
-        ebitda = _ebitda(idx, period)
-        if ebitda:
-            out.append(_make("net_debt_to_ebitda", _div(td[0] - cash.value, ebitda[0]), period, td[1] + [_in(cash)] + ebitda[1]))
+        # net_debt is a point-in-time stock; EBITDA is a period flow -> annual only.
+        if period.startswith("FY"):
+            ebitda = _ebitda(idx, period)
+            if ebitda:
+                out.append(_make("net_debt_to_ebitda", _div(td[0] - cash.value, ebitda[0]), period, td[1] + [_in(cash)] + ebitda[1]))
     out.append(_ratio(idx, period, "interest_coverage", "OperatingIncomeLoss", "InterestExpense"))
     return out
 
 
 def _efficiency(idx, period) -> list[DerivedMetric | None]:
-    out = [
-        _ratio(idx, period, "asset_turnover", "Revenues", "Assets"),
-        _ratio(idx, period, "inventory_turnover", "CostOfRevenue", "Inventory"),
+    # capex_intensity is flow/flow -> valid any period.
+    out: list[DerivedMetric | None] = [
         _ratio(idx, period, "capex_intensity", "CapitalExpenditures", "Revenues"),
     ]
-    # DSO is an annual figure (x365); skip for quarterly periods.
+    # Turnover ratios divide a period FLOW by a point-in-time STOCK, and DSO is an
+    # annual figure (x365): all annual-only.
     if period.startswith("FY"):
+        out.append(_ratio(idx, period, "asset_turnover", "Revenues", "Assets"))
+        out.append(_ratio(idx, period, "inventory_turnover", "CostOfRevenue", "Inventory"))
         ar = _fact(idx, "AccountsReceivableNetCurrent", period)
         rev = _fact(idx, "Revenues", period)
         if ar and rev and rev.value != 0:
@@ -247,12 +256,27 @@ def _prev_quarter(period: str) -> str:
     return f"Q4 FY{y - 1}" if n == 1 else f"Q{n - 1} FY{y}"
 
 
-def _yoy(idx, period, name, concept) -> DerivedMetric | None:
+def _split_suspected(idx, period, prev_period) -> bool:
+    """True when the diluted share count between two periods changed by a split-like
+    factor (>2x or <0.5x). Stock splits leave companyfacts mixing split-adjusted and
+    unadjusted per-share/share values across the tag history, so per-share growth and
+    share-count change across that boundary are unreliable and should be skipped."""
+    a = _fact(idx, "WeightedAverageSharesDiluted", period)
+    b = _fact(idx, "WeightedAverageSharesDiluted", prev_period)
+    if not a or not b or b.value == 0:
+        return False
+    ratio = a.value / b.value
+    return ratio > 2.0 or ratio < 0.5
+
+
+def _yoy(idx, period, name, concept, *, guard_shares: bool = False) -> DerivedMetric | None:
     if period.startswith("FY"):
         prev = _prev_fy(period)
     else:
         q, fy = period.split()
         prev = f"{q} FY{int(fy[2:]) - 1}"   # same quarter, prior year
+    if guard_shares and _split_suspected(idx, period, prev):
+        return None
     a = _fact(idx, concept, period)
     b = _fact(idx, concept, prev)
     if not a or not b:
@@ -260,11 +284,14 @@ def _yoy(idx, period, name, concept) -> DerivedMetric | None:
     return _make(name, _gr(a.value, b.value), period, [_in(a), _in(b)])
 
 
-def _cagr(idx, period, name, concept, years=3) -> DerivedMetric | None:
+def _cagr(idx, period, name, concept, years=3, *, guard_shares: bool = False) -> DerivedMetric | None:
     if not period.startswith("FY"):
         return None
+    prev = _prev_fy(period, years)
+    if guard_shares and _split_suspected(idx, period, prev):
+        return None
     a = _fact(idx, concept, period)
-    b = _fact(idx, concept, _prev_fy(period, years))
+    b = _fact(idx, concept, prev)
     if not a or not b or a.value <= 0 or b.value <= 0:
         return None
     return _make(name, (a.value / b.value) ** (1 / years) - 1, period, [_in(a), _in(b)])
@@ -273,9 +300,9 @@ def _cagr(idx, period, name, concept, years=3) -> DerivedMetric | None:
 def _growth(idx, period) -> list[DerivedMetric | None]:
     out: list[DerivedMetric | None] = [
         _yoy(idx, period, "revenue_growth_yoy", "Revenues"),
-        _yoy(idx, period, "eps_growth_yoy", "EarningsPerShareDiluted"),
+        _yoy(idx, period, "eps_growth_yoy", "EarningsPerShareDiluted", guard_shares=True),
         _cagr(idx, period, "revenue_cagr_3y", "Revenues"),
-        _cagr(idx, period, "eps_cagr_3y", "EarningsPerShareDiluted"),
+        _cagr(idx, period, "eps_cagr_3y", "EarningsPerShareDiluted", guard_shares=True),
     ]
     # fcf_growth_yoy (annual): needs fcf at period and prior FY
     if period.startswith("FY"):
@@ -312,9 +339,10 @@ def _quality(idx, period) -> list[DerivedMetric | None]:
     if etr:
         out.append(_make("effective_tax_rate", etr[0], period, etr[1]))
     if period.startswith("FY"):
+        prev = _prev_fy(period)
         a = _fact(idx, "WeightedAverageSharesDiluted", period)
-        b = _fact(idx, "WeightedAverageSharesDiluted", _prev_fy(period))
-        if a and b:
+        b = _fact(idx, "WeightedAverageSharesDiluted", prev)
+        if a and b and not _split_suspected(idx, period, prev):
             out.append(_make("share_count_change_yoy", _gr(a.value, b.value), period, [_in(a), _in(b)]))
     fcf = _fcf(idx, period)
     div = _fact(idx, "DividendsPaid", period)
@@ -415,6 +443,29 @@ def _valuation(idx, quote: Quote | None) -> list[DerivedMetric | None]:
 # ----- entry point -----------------------------------------------------------
 
 
+def _period_year(period: str | None) -> int | None:
+    p = period or ""
+    try:
+        if p.startswith("FY"):
+            return int(p[2:])
+        if p.startswith("Q"):
+            return int(p.split()[1][2:])
+    except (ValueError, IndexError):
+        return None
+    return None
+
+
+def _drop_stale(metrics: list[DerivedMetric], keep_years: int = 5) -> list[DerivedMetric]:
+    """Drop metrics whose fiscal year is older than the latest minus keep_years, so a
+    concept lacking recent data can't surface ancient periods as if current. TTM and
+    point-in-time metrics (no FY/Q period) are always kept."""
+    years = [y for m in metrics if (y := _period_year(m.fiscal_period)) is not None]
+    if not years:
+        return metrics
+    cutoff = max(years) - keep_years + 1
+    return [m for m in metrics if (y := _period_year(m.fiscal_period)) is None or y >= cutoff]
+
+
 def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> list[DerivedMetric]:
     idx = _index(fundamentals)
     out: list[DerivedMetric | None] = []
@@ -429,4 +480,4 @@ def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> l
         out += _per_share(idx, period)
         out += _quality(idx, period)
     out += _valuation(idx, quote)
-    return [m for m in out if m]
+    return _drop_stale([m for m in out if m])
