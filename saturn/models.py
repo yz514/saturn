@@ -60,6 +60,24 @@ class MacroSnapshot(BaseModel):
     series: list[MacroSeries] = Field(default_factory=list)
 
 
+class ConsensusSnapshot(BaseModel):
+    """Validated, best-effort analyst consensus (yfinance). A distinct epistemic
+    class: external estimate data, not as-reported and not a Saturn model output."""
+
+    forward_eps: float | None = None
+    forward_pe: float | None = None
+    peg: float | None = None
+    target_mean: float | None = None
+    target_high: float | None = None
+    target_low: float | None = None
+    target_upside_pct: float | None = None
+    rating: str | None = None
+    n_analysts: int | None = None
+    last_eps_surprise_pct: float | None = None
+    provenance: Provenance
+    rejected: list[str] = Field(default_factory=list)
+
+
 class MaterialEvent(BaseModel):
     """A single SEC 8-K filing (material event), optionally with a body excerpt."""
 
@@ -116,6 +134,7 @@ class CompanyDossier(BaseModel):
     material_events: list[MaterialEvent] = Field(default_factory=list)
     derived_metrics: list[DerivedMetric] = Field(default_factory=list)
     macro: MacroSnapshot | None = None
+    consensus: ConsensusSnapshot | None = None
     news: list[NewsItem] = Field(default_factory=list)
     gaps: list[SourceGap] = Field(default_factory=list)
     generated_at: date

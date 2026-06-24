@@ -103,3 +103,23 @@ def test_derived_metric_and_input_models():
     assert d.derived_metrics == []          # default empty
     d.derived_metrics = [m]
     assert d.derived_metrics[0].name == "gross_margin"
+
+
+def test_consensus_snapshot_model():
+    from saturn.models import ConsensusSnapshot, Provenance, CompanyDossier
+    from datetime import date
+
+    c = ConsensusSnapshot(
+        forward_pe=28.0, forward_eps=32.0, target_mean=1000.0, target_upside_pct=0.1,
+        rating="buy", n_analysts=40, last_eps_surprise_pct=0.05,
+        provenance=Provenance(source="yfinance (estimate)"),
+        rejected=["forward_eps: rejected — implies +300%"],
+    )
+    assert c.forward_pe == 28.0 and c.rating == "buy"
+    assert c.rejected[0].startswith("forward_eps")
+    assert c.peg is None  # optional default
+
+    d = CompanyDossier(ticker="X", name="X", generated_at=date(2026, 6, 23))
+    assert d.consensus is None
+    d.consensus = c
+    assert d.consensus.rating == "buy"
