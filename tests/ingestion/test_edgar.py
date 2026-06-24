@@ -226,6 +226,57 @@ def test_parse_includes_debt_current_and_receivables():
     assert "AccountsReceivableNetCurrent" in concepts
 
 
+def test_annual_keyed_by_period_end_not_filing_fy():
+    """Mirrors AVGO NetIncomeLoss: three fiscal years all tagged with the FILING's
+    fy=2024 but with distinct period ends, plus a quarterly figure mistagged fp=FY
+    inside the 10-K. We must recover all three years (keyed by period end) and drop
+    the mistagged quarter (excluded by its ~90-day span)."""
+    payload = {"cik": 1, "facts": {"us-gaap": {"NetIncomeLoss": {"units": {"USD": [
+        {"start": "2021-11-01", "end": "2022-10-30", "val": 11495, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-12-20"},
+        {"start": "2022-10-31", "end": "2023-10-29", "val": 14082, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-12-20"},
+        {"start": "2023-10-30", "end": "2024-11-03", "val": 5895, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-12-20"},
+        {"start": "2024-08-01", "end": "2024-11-03", "val": 1500, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-12-20"},  # mistagged quarter
+    ]}}}}}
+    f = _parse_companyfacts(payload, max_years=5)
+    ni = {x.fiscal_period: x.value for x in f.facts if x.concept == "NetIncomeLoss"}
+    assert ni.get("FY2022") == 11495
+    assert ni.get("FY2023") == 14082
+    assert ni.get("FY2024") == 5895   # the ~annual row, not the 1500 mistagged quarter
+
+
+def test_alias_tags_merge_by_period_to_fill_gaps():
+    """First-present-tag-wins drops recent data when a filer migrates to an alias
+    tag (e.g. AVGO net income under ProfitLoss, equity under the ...IncludingNCI
+    tag). Alias tags must be MERGED per fiscal period, with the primary tag winning
+    any overlapping year."""
+    payload = {"cik": 1, "facts": {"us-gaap": {
+        "NetIncomeLoss": {"units": {"USD": [
+            {"start": "2022-10-31", "end": "2023-10-29", "val": 14082, "fp": "FY", "form": "10-K", "filed": "2023-12-20"},
+        ]}},
+        "ProfitLoss": {"units": {"USD": [
+            {"start": "2023-10-30", "end": "2024-11-03", "val": 5895, "fp": "FY", "form": "10-K", "filed": "2024-12-20"},
+            {"start": "2022-10-31", "end": "2023-10-29", "val": 99999, "fp": "FY", "form": "10-K", "filed": "2024-12-20"},
+        ]}},
+    }}}
+    f = _parse_companyfacts(payload, max_years=5)
+    ni = {x.fiscal_period: x.value for x in f.facts if x.concept == "NetIncomeLoss"}
+    assert ni.get("FY2024") == 5895    # gap filled from the ProfitLoss alias
+    assert ni.get("FY2023") == 14082   # primary NetIncomeLoss tag wins the overlap
+
+
+def test_annual_instant_keyed_by_end_recovers_all_years():
+    """Instant balance-sheet rows (no `start`) tagged with the filing fy must still
+    key by their own period end so every fiscal-year-end value is recovered."""
+    payload = {"cik": 1, "facts": {"us-gaap": {"StockholdersEquity": {"units": {"USD": [
+        {"end": "2023-10-29", "val": 700, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-12-20"},
+        {"end": "2024-11-03", "val": 800, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-12-20"},
+    ]}}}}}
+    f = _parse_companyfacts(payload, max_years=5)
+    eq = {x.fiscal_period: x.value for x in f.facts if x.concept == "StockholdersEquity"}
+    assert eq.get("FY2023") == 700
+    assert eq.get("FY2024") == 800
+
+
 def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
     from datetime import date as _date
 

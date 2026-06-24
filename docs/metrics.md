@@ -16,10 +16,10 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 
 | Metric | Format | Formula | Notes |
 | --- | --- | --- | --- |
-| `roe` | percent | NetIncomeLoss / StockholdersEquity |  |
-| `roa` | percent | NetIncomeLoss / Assets |  |
-| `roic` | percent | (OperatingIncomeLoss * (1 - effective_tax_rate)) / (TotalDebt + StockholdersEquity) | NOPAT approx = operating income x (1 - effective tax rate); invested capital approx = total debt + equity. |
-| `roce` | percent | OperatingIncomeLoss / (Assets - LiabilitiesCurrent) |  |
+| `roe` | percent | NetIncomeLoss / StockholdersEquity | Annual periods only (period flow vs. point-in-time stock). |
+| `roa` | percent | NetIncomeLoss / Assets | Annual periods only (period flow vs. point-in-time stock). |
+| `roic` | percent | (OperatingIncomeLoss * (1 - effective_tax_rate)) / (TotalDebt + StockholdersEquity) | Annual only. NOPAT approx = operating income x (1 - effective tax rate); invested capital approx = total debt + equity. |
+| `roce` | percent | OperatingIncomeLoss / (Assets - LiabilitiesCurrent) | Annual periods only (period flow vs. point-in-time stock). |
 
 ## Liquidity
 
@@ -36,15 +36,15 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 | `debt_to_equity` | ratio | TotalDebt / StockholdersEquity | TotalDebt = LongTermDebt + DebtCurrent (LongTermDebt alone if DebtCurrent absent). |
 | `debt_to_assets` | ratio | TotalDebt / Assets |  |
 | `net_debt` | currency | TotalDebt - CashAndCashEquivalents |  |
-| `net_debt_to_ebitda` | x | (TotalDebt - CashAndCashEquivalents) / (OperatingIncomeLoss + DepreciationAndAmortization) |  |
+| `net_debt_to_ebitda` | x | (TotalDebt - CashAndCashEquivalents) / (OperatingIncomeLoss + DepreciationAndAmortization) | Annual periods only (net debt is point-in-time; EBITDA is a period flow). |
 | `interest_coverage` | x | OperatingIncomeLoss / InterestExpense |  |
 
 ## Efficiency
 
 | Metric | Format | Formula | Notes |
 | --- | --- | --- | --- |
-| `asset_turnover` | x | Revenues / Assets |  |
-| `inventory_turnover` | x | CostOfRevenue / Inventory |  |
+| `asset_turnover` | x | Revenues / Assets | Annual periods only (period flow vs. point-in-time stock). |
+| `inventory_turnover` | x | CostOfRevenue / Inventory | Annual periods only (period flow vs. point-in-time stock). |
 | `capex_intensity` | percent | CapitalExpenditures / Revenues |  |
 | `days_sales_outstanding` | ratio | AccountsReceivableNetCurrent / Revenues * 365 |  |
 
@@ -60,10 +60,10 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 | Metric | Format | Formula | Notes |
 | --- | --- | --- | --- |
 | `revenue_growth_yoy` | percent | Revenues[t] / Revenues[t-1] - 1 |  |
-| `eps_growth_yoy` | percent | EarningsPerShareDiluted[t] / EarningsPerShareDiluted[t-1] - 1 |  |
+| `eps_growth_yoy` | percent | EarningsPerShareDiluted[t] / EarningsPerShareDiluted[t-1] - 1 | Skipped across a split-like share-count change (>2x or <0.5x). |
 | `fcf_growth_yoy` | percent | FCF[t] / FCF[t-1] - 1 |  |
 | `revenue_cagr_3y` | percent | (Revenues[t] / Revenues[t-3]) ** (1/3) - 1 | Only when both endpoints are positive. |
-| `eps_cagr_3y` | percent | (EarningsPerShareDiluted[t] / EarningsPerShareDiluted[t-3]) ** (1/3) - 1 | Only when both endpoints are positive. |
+| `eps_cagr_3y` | percent | (EarningsPerShareDiluted[t] / EarningsPerShareDiluted[t-3]) ** (1/3) - 1 | Only when both endpoints are positive; skipped across a split-like share-count change. |
 | `revenue_growth_qoq` | percent | Revenues[Q] / Revenues[Q-1] - 1 |  |
 
 ## Per-share
@@ -100,7 +100,7 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 | Metric | Format | Formula | Notes |
 | --- | --- | --- | --- |
 | `effective_tax_rate` | percent | IncomeTaxExpenseBenefit / (NetIncomeLoss + IncomeTaxExpenseBenefit) | Pretax income approximated as net income + tax expense. |
-| `share_count_change_yoy` | percent | WeightedAverageSharesDiluted[t] / WeightedAverageSharesDiluted[t-1] - 1 |  |
+| `share_count_change_yoy` | percent | WeightedAverageSharesDiluted[t] / WeightedAverageSharesDiluted[t-1] - 1 | Skipped when the change is split-like (>2x or <0.5x). |
 | `dividend_coverage` | x | (OperatingCashFlow - CapitalExpenditures) / DividendsPaid |  |
 | `accruals_ratio` | percent | (NetIncomeLoss - OperatingCashFlow) / Assets |  |
 | `buyback_yield` | percent | StockRepurchased / market_cap |  |

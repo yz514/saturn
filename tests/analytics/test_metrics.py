@@ -239,6 +239,57 @@ def test_valuation_skipped_without_quote():
     assert _by_name(compute_metrics(f, None), "pe_ratio", "TTM") is None
 
 
+def test_flow_over_stock_ratios_are_annual_only():
+    # A quarterly FLOW (3-month revenue/COGS/income) over a point-in-time STOCK
+    # (assets/equity/inventory) is a period mismatch (~1/4 scale) -> emit annual only.
+    rows = [
+        ("Revenues", "FY2025", 1000.0), ("Revenues", "Q2 FY2025", 250.0),
+        ("Assets", "FY2025", 2000.0), ("Assets", "Q2 FY2025", 2000.0),
+        ("NetIncomeLoss", "FY2025", 200.0), ("NetIncomeLoss", "Q2 FY2025", 50.0),
+        ("StockholdersEquity", "FY2025", 1000.0), ("StockholdersEquity", "Q2 FY2025", 1000.0),
+        ("CostOfRevenue", "FY2025", 600.0), ("CostOfRevenue", "Q2 FY2025", 150.0),
+        ("Inventory", "FY2025", 300.0), ("Inventory", "Q2 FY2025", 300.0),
+        ("OperatingIncomeLoss", "FY2025", 250.0), ("OperatingIncomeLoss", "Q2 FY2025", 60.0),
+        ("LiabilitiesCurrent", "FY2025", 500.0), ("LiabilitiesCurrent", "Q2 FY2025", 500.0),
+    ]
+    ms = compute_metrics(_facts(rows), None)
+    for name in ("roe", "roa", "roce", "asset_turnover", "inventory_turnover"):
+        assert _by_name(ms, name, "FY2025") is not None, f"{name} annual missing"
+        assert _by_name(ms, name, "Q2 FY2025") is None, f"{name} should be annual-only"
+    # a flow/flow ratio (margin) is still emitted quarterly
+    assert _by_name(ms, "net_margin", "Q2 FY2025") is not None
+
+
+def test_per_share_growth_skipped_on_split_like_share_change():
+    rows = [
+        ("EarningsPerShareDiluted", "FY2025", 5.0), ("EarningsPerShareDiluted", "FY2024", 30.0),
+        ("WeightedAverageSharesDiluted", "FY2025", 4800.0), ("WeightedAverageSharesDiluted", "FY2024", 480.0),  # 10x -> split
+    ]
+    ms = compute_metrics(_facts(rows), None)
+    assert _by_name(ms, "eps_growth_yoy", "FY2025") is None        # split-contaminated -> skipped
+    assert _by_name(ms, "share_count_change_yoy", "FY2025") is None
+
+
+def test_per_share_growth_emitted_on_normal_share_change():
+    rows = [
+        ("EarningsPerShareDiluted", "FY2025", 6.0), ("EarningsPerShareDiluted", "FY2024", 5.0),
+        ("WeightedAverageSharesDiluted", "FY2025", 1020.0), ("WeightedAverageSharesDiluted", "FY2024", 1000.0),  # +2%
+    ]
+    ms = compute_metrics(_facts(rows), None)
+    assert abs(_by_name(ms, "eps_growth_yoy", "FY2025").value - 0.2) < 1e-9
+    assert abs(_by_name(ms, "share_count_change_yoy", "FY2025").value - 0.02) < 1e-9
+
+
+def test_stale_periods_dropped_outside_recency_window():
+    rows = [
+        ("Revenues", "FY2025", 1000.0), ("NetIncomeLoss", "FY2025", 200.0),
+        ("Revenues", "FY2018", 100.0), ("NetIncomeLoss", "FY2018", 20.0),
+    ]
+    ms = compute_metrics(_facts(rows), None)
+    assert _by_name(ms, "net_margin", "FY2025") is not None
+    assert _by_name(ms, "net_margin", "FY2018") is None   # >4 years older than latest -> dropped
+
+
 def test_valuation_falls_back_to_fy_when_quarters_incomplete():
     # Only 2 quarters present -> TTM (needs 4) unavailable -> valuation uses latest FY,
     # labeled with the FY period, never silently mixed with "TTM".

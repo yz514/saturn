@@ -38,7 +38,7 @@ EDGAR_CONCEPTS: dict[str, dict] = {
     "OperatingIncomeLoss": {"unit": "USD", "tags": ["OperatingIncomeLoss"]},
     "InterestExpense": {"unit": "USD", "tags": ["InterestExpense", "InterestExpenseDebt", "InterestAndDebtExpense"]},
     "IncomeTaxExpenseBenefit": {"unit": "USD", "tags": ["IncomeTaxExpenseBenefit"]},
-    "NetIncomeLoss": {"unit": "USD", "tags": ["NetIncomeLoss"]},
+    "NetIncomeLoss": {"unit": "USD", "tags": ["NetIncomeLoss", "ProfitLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"]},
     # Per-share / shares
     "EarningsPerShareDiluted": {"unit": "USD/shares", "tags": ["EarningsPerShareDiluted"]},
     "EarningsPerShareBasic": {"unit": "USD/shares", "tags": ["EarningsPerShareBasic"]},
@@ -73,7 +73,11 @@ _ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik_int}/{accn_nodash}/
 def _period_entries(tag_block: dict, unit: str, *, annual: bool = True) -> dict:
     """From a us-gaap tag block, return {key: best_entry} for the requested unit.
 
-    annual=True -> key is fiscal_year for FY 10-K rows (10-K/A supersedes 10-K).
+    annual=True -> key is the fiscal year derived from the period END date for
+    full-year 10-K rows (10-K/A supersedes 10-K). The companyfacts `fy` field is
+    NOT used as the key: SEC tags every fact in a filing with that filing's fiscal
+    year, so a 10-K's prior-year comparatives all carry the current `fy` and would
+    collapse to one year. Keying by period end recovers each fiscal year.
     annual=False -> key is (fiscal_year, fp) for Q1-Q4 10-Q rows.
     Latest-filed wins per key.
     """
@@ -83,9 +87,16 @@ def _period_entries(tag_block: dict, unit: str, *, annual: bool = True) -> dict:
         fp = row.get("fp")
         form = str(row.get("form", ""))
         if annual:
-            if fp != "FY" or not form.startswith("10-K"):
+            if not form.startswith("10-K"):
                 continue
-            key = row.get("fy")
+            # Exclude figures mistagged fp=FY inside a 10-K that aren't full-year
+            # durations (some filers carry quarterly figures as fp=FY). Instant
+            # balance-sheet rows have no `start` (span None) and are kept as the
+            # fiscal-year-end value.
+            span = _span_days(row)
+            if span is not None and not (330 <= span <= 400):
+                continue
+            key = _fiscal_year_from_end(row.get("end"))
         else:
             if fp not in ("Q1", "Q2", "Q3", "Q4") or not form.startswith("10-Q"):
                 continue
@@ -102,6 +113,16 @@ def _period_entries(tag_block: dict, unit: str, *, annual: bool = True) -> dict:
         # balance-sheet rows (no `start`) and genuine ~3-month rows are kept.
         best = {k: r for k, r in best.items() if _is_single_quarter_or_instant(r)}
     return best
+
+
+def _fiscal_year_from_end(end: object) -> int | None:
+    """Fiscal-year label = calendar year of the period-end date (the dominant
+    convention: a fiscal year is named for the year in which it ends). More
+    reliable than companyfacts' filing-scoped `fy` field."""
+    try:
+        return int(str(end)[:4])
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_single_quarter_or_instant(row: dict) -> bool:
@@ -149,25 +170,26 @@ def _parse_companyfacts(raw: dict, *, max_years: int = 4, max_quarters: int = 8)
     cik = raw.get("cik")
     url = _COMPANYFACTS_URL.format(cik=f"{int(cik):010d}") if cik is not None else None
     gaap = (raw.get("facts", {}) or {}).get("us-gaap", {})
-    # NOTE: first-present-tag-wins — if a filer switched XBRL tags mid-history,
-    # years reported only under a non-selected alias are omitted. Fine for the
-    # recent window we surface.
+    # Alias tags are MERGED per fiscal period: a filer that migrates mid-history
+    # (e.g. net income NetIncomeLoss -> ProfitLoss, equity -> ...IncludingNCI)
+    # reports recent years only under the alias. We union the periods across all
+    # of a concept's tags, with the earlier (primary) tag winning any overlap.
 
     facts: list[FinancialFact] = []
     for canonical, spec in EDGAR_CONCEPTS.items():
         unit = spec["unit"]
-        block = None
+        annual: dict = {}
+        quarterly: dict = {}
         for tag in spec["tags"]:
-            if tag in gaap:
-                block = gaap[tag]
-                break
-        if block is None:
-            continue
-        annual = _period_entries(block, unit, annual=True)
+            block = gaap.get(tag)
+            if block is None:
+                continue
+            for fy, row in _period_entries(block, unit, annual=True).items():
+                annual.setdefault(fy, row)        # primary tag wins per period
+            for key, row in _period_entries(block, unit, annual=False).items():
+                quarterly.setdefault(key, row)
         for fy in sorted(annual.keys(), reverse=True)[:max_years]:
             _append_fact(facts, canonical, unit, f"FY{fy}", annual[fy], url)
-
-        quarterly = _period_entries(block, unit, annual=False)
         for key in sorted(quarterly.keys(), key=_quarter_sort_key, reverse=True)[:max_quarters]:
             fy, fp = key
             _append_fact(facts, canonical, unit, f"{fp} FY{fy}", quarterly[key], url)
