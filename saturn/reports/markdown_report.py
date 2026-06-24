@@ -204,6 +204,9 @@ def render(report: ResearchReport) -> str:
         if cons.rejected:
             out.append("")
             out += [f"- rejected — {r}" for r in cons.rejected]
+    elif cons is not None and cons.rejected:
+        out.append("_No consensus values passed validation; all were rejected:_")
+        out += [f"- rejected — {r}" for r in cons.rejected]
     else:
         out.append("_No analyst consensus available._")
     out.append("")

@@ -65,8 +65,8 @@ def validate_consensus(
     # --- forward EPS / forward PE / PEG ---
     fe = raw.forward_eps
     if fe is not None:
-        if price is None:
-            rejected.append("forward_eps: no price to validate against")
+        if price is None or price <= 0:
+            rejected.append("forward_eps: no usable price to validate against")
         elif trailing_eps is None or trailing_eps <= 0:
             rejected.append(f"forward_eps: no positive verified trailing EPS to validate against (got {trailing_eps})")
         else:
@@ -79,12 +79,12 @@ def validate_consensus(
             )
             if not (lo <= growth <= hi):
                 rejected.append(
-                    f"forward_eps: rejected — implies {growth:+.0%} vs verified trailing "
+                    f"forward_eps/forward_pe/peg: rejected — forward_eps implies {growth:+.0%} vs verified trailing "
                     f"{trailing_eps:.2f} (outside [{lo:+.0%}, {hi:+.0%}])"
                 )
             elif inconsistent:
                 rejected.append(
-                    f"forward_pe: rejected — {raw.forward_pe} inconsistent with price/forward_eps {implied_pe:.1f}"
+                    f"forward_eps/forward_pe/peg: rejected — forward_pe {raw.forward_pe} inconsistent with price/forward_eps {implied_pe:.1f}"
                 )
             else:
                 snap.forward_eps = fe
@@ -94,8 +94,8 @@ def validate_consensus(
     # --- price targets ---
     tm, th, tl, na = raw.target_mean, raw.target_high, raw.target_low, raw.n_analysts
     if tm is not None:
-        if price is None:
-            rejected.append("price_target: no price to validate against")
+        if price is None or price <= 0:
+            rejected.append("price_target: no usable price to validate against")
         else:
             lo, hi = TARGET_PRICE_BAND
 
@@ -123,12 +123,15 @@ def validate_consensus(
 
     # --- last EPS surprise ---
     a, e = raw.last_actual_eps, raw.last_estimate_eps
-    if a is not None and e:
-        surprise = (a - e) / abs(e)
-        if abs(surprise) <= MAX_SURPRISE:
-            snap.last_eps_surprise_pct = surprise
+    if a is not None and e is not None:
+        if e == 0:
+            rejected.append("eps_surprise: rejected — estimate is zero")
         else:
-            rejected.append(f"eps_surprise: rejected — {surprise:+.0%} implausible")
+            surprise = (a - e) / abs(e)
+            if abs(surprise) <= MAX_SURPRISE:
+                snap.last_eps_surprise_pct = surprise
+            else:
+                rejected.append(f"eps_surprise: rejected — {surprise:+.0%} implausible")
 
     snap.rejected = rejected
     return snap

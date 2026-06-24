@@ -82,6 +82,21 @@ def test_negative_trailing_eps_rejects_forward():
     assert c.forward_eps is None and any("forward_eps" in r for r in c.rejected)
 
 
+def test_nonpositive_price_rejects_forward_eps():
+    raw = RawConsensus(forward_eps=9.0, forward_pe=11.0, target_mean=110.0,
+                       target_high=120.0, target_low=100.0, n_analysts=10)
+    c = validate_consensus(raw, _fund({"FY2024": 8.0}), _quote(0.0))
+    assert c.forward_eps is None and c.forward_pe is None
+    assert any("forward_eps" in r for r in c.rejected)
+
+
+def test_zero_estimate_surprise_rejected_with_reason():
+    raw = RawConsensus(last_actual_eps=2.0, last_estimate_eps=0.0)
+    c = validate_consensus(raw, _fund({"FY2024": 5.0}), _quote(100.0))
+    assert c.last_eps_surprise_pct is None
+    assert any("eps_surprise" in r and "zero" in r for r in c.rejected)
+
+
 def test_fetch_consensus_maps_info_fields(monkeypatch):
     import saturn.ingestion.consensus as cons
 

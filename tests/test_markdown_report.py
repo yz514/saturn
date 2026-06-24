@@ -211,3 +211,16 @@ def test_render_consensus_absent():
     report.company.consensus = None
     md = render(report)
     assert "_No analyst consensus available._" in md
+
+
+def test_render_consensus_all_rejected_still_shows_reasons():
+    from saturn.models import ConsensusSnapshot, Provenance
+    report = _sample_report()
+    report.company.consensus = ConsensusSnapshot(
+        provenance=Provenance(source="yfinance (estimate)"),
+        rejected=["forward_eps/forward_pe/peg: rejected — forward_eps implies +306%"],
+    )
+    md = render(report)
+    assert "all were rejected" in md
+    assert "forward_eps" in md
+    assert "_No analyst consensus available._" not in md
