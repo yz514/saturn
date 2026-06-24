@@ -145,10 +145,12 @@ def render(report: ResearchReport) -> str:
     out += [a.financial_snapshot, ""]
 
     out += ["## 6. Key Metrics", ""]
-    if c.derived_metrics:
+    _derived = [m for m in c.derived_metrics if m.provenance.source != "Saturn (model)"]
+    _forward = [m for m in c.derived_metrics if m.provenance.source == "Saturn (model)"]
+    if _derived:
         out.append("| Metric | Period | Value | Formula |")
         out.append("| --- | --- | --- | --- |")
-        for m in _select_report_metrics(c.derived_metrics):
+        for m in _select_report_metrics(_derived):
             out.append(
                 f"| {m.name} | {m.fiscal_period or 'current'} | "
                 f"{_fmt_metric(m.value, m.format)} | {m.formula} |"
@@ -162,6 +164,18 @@ def render(report: ResearchReport) -> str:
     else:
         out.append("_No derived metrics available._")
     out.append("")
+    if _forward:
+        out += ["### Forward / Expectations (model estimate)", ""]
+        out.append("| Metric | Value | Formula |")
+        out.append("| --- | --- | --- |")
+        for m in _forward:
+            out.append(f"| {m.name} | {_fmt_metric(m.value, m.format)} | {m.formula} |")
+        out.append("")
+        out.append(
+            "_Reverse-DCF model (10-yr horizon, 2.5% terminal growth, 8/10/12% discount). "
+            "Model estimate from price + as-reported FCF, not as-reported. See docs/metrics.md._"
+        )
+        out.append("")
 
     out += ["## 7. Recent News and Catalysts", ""]
     if c.news:

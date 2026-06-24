@@ -163,3 +163,27 @@ def test_render_groups_financials_and_shows_events():
     assert "## 15. Material Events (SEC 8-K)" in md            # renumbered
     assert "Results of Operations and Financial Condition" in md
     assert "## 16. Sources" in md                              # renumbered
+
+
+def test_render_forward_expectations_subtable():
+    from saturn.models import DerivedMetric, MetricInput, Provenance
+    report = _sample_report()
+    report.company.derived_metrics = [
+        DerivedMetric(name="net_margin", value=0.25, format="percent", fiscal_period="FY2024",
+                      formula="NetIncomeLoss / Revenues", provenance=Provenance(source="Saturn (derived)")),
+        DerivedMetric(name="implied_fcf_growth", value=0.18, format="percent", fiscal_period="model",
+                      formula="g s.t. 2-stage DCF(g, r=10%) = market_cap",
+                      inputs=[MetricInput(concept="market_cap", value=1.0, source="yfinance")],
+                      provenance=Provenance(source="Saturn (model)")),
+        DerivedMetric(name="margin_of_safety", value=-0.30, format="percent", fiscal_period="model",
+                      formula="reverse_dcf_fair_value (mid) / market_cap - 1",
+                      provenance=Provenance(source="Saturn (model)")),
+    ]
+    md = render(report)
+    assert "Forward / Expectations" in md
+    assert "implied_fcf_growth" in md and "18.0%" in md
+    assert "margin_of_safety" in md and "-30.0%" in md
+    # the model metrics are NOT duplicated into the main Key Metrics table
+    assert md.count("implied_fcf_growth") == 1
+    # the main table still shows the derived metric
+    assert "net_margin" in md
