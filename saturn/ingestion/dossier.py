@@ -14,6 +14,7 @@ from typing import Callable
 
 from saturn.analytics.forward import compute_forward
 from saturn.analytics.metrics import compute_metrics
+from saturn.ingestion.consensus import fetch_consensus, validate_consensus, RawConsensus
 from saturn.ingestion.dispatch import route_to_source
 from saturn.ingestion.edgar import fetch_edgar
 from saturn.ingestion.errors import DataUnavailable
@@ -21,6 +22,7 @@ from saturn.ingestion.fred import fetch_fred
 from saturn.ingestion.prices import fetch_quote
 from saturn.models import (
     CompanyDossier,
+    ConsensusSnapshot,
     FilingSection,
     FinancialFact,
     Fundamentals,
@@ -90,6 +92,12 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
         generated_at=date.today(),
     )
     dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote) + compute_forward(dossier.fundamentals, dossier.quote)
+    dossier.consensus = ConsensusSnapshot(
+        forward_eps=32.0, forward_pe=28.0, peg=1.5,
+        target_mean=1000.0, target_high=1200.0, target_low=800.0, target_upside_pct=1000.0 / 900.0 - 1,
+        rating="buy", n_analysts=40, last_eps_surprise_pct=0.05,
+        provenance=Provenance(source="yfinance (estimate, mock)", as_of=date.today()),
+    )
     return dossier
 
 
@@ -160,6 +168,18 @@ def build_dossier(
             type(edgar_result).__name__,
         )
 
+    def _consensus():
+        return fetch_consensus(ticker)
+
+    raw_consensus, gap = route_to_source("consensus", _consensus)
+    if gap:
+        gaps.append(gap)
+    consensus = (
+        validate_consensus(raw_consensus, fundamentals, quote)
+        if isinstance(raw_consensus, RawConsensus)
+        else None
+    )
+
     dossier = CompanyDossier(
         ticker=ticker,
         cik=ident.get("cik") or edgar_cik,
@@ -173,6 +193,7 @@ def build_dossier(
         filing_sections=filing_sections or [],
         material_events=material_events,
         macro=fred_result if isinstance(fred_result, MacroSnapshot) else None,
+        consensus=consensus,
         news=ident.get("news", []),
         gaps=gaps,
         generated_at=date.today(),
