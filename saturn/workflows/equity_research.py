@@ -134,6 +134,20 @@ def _company_context(dossier: CompanyDossier) -> str:
         for m in _forward:
             lines.append(f"- {m.name}: {m.value} ({m.formula}; source: Saturn model)")
 
+    cons = dossier.consensus
+    if cons is not None:
+        lines.append("\nCONSENSUS / ANALYST EXPECTATIONS (yfinance estimate; may be unreliable):")
+        for label, val in (
+            ("forward_pe", cons.forward_pe), ("peg", cons.peg),
+            ("target_mean", cons.target_mean), ("target_upside_pct", cons.target_upside_pct),
+            ("rating", cons.rating), ("n_analysts", cons.n_analysts),
+            ("last_eps_surprise_pct", cons.last_eps_surprise_pct),
+        ):
+            if val is not None:
+                lines.append(f"- {label}: {val}")
+        if cons.rejected:
+            lines.append(f"- rejected (failed validation, withheld): {'; '.join(cons.rejected)}")
+
     if dossier.filing_sections:
         lines.append("\nFILING SECTIONS:")
         for s in dossier.filing_sections:

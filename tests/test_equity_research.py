@@ -210,3 +210,21 @@ def test_company_context_includes_forward_block():
     assert "FORWARD / EXPECTATIONS" in ctx
     assert "implied_fcf_growth" in ctx
     assert "Saturn model" in ctx
+
+
+def test_company_context_includes_consensus_block():
+    from datetime import date as _date
+    from saturn.models import CompanyDossier, ConsensusSnapshot, Provenance
+    from saturn.workflows.equity_research import _company_context
+
+    d = CompanyDossier(ticker="X", name="X", generated_at=_date(2026, 6, 23))
+    d.consensus = ConsensusSnapshot(
+        forward_pe=28.0, target_mean=1000.0, target_upside_pct=0.11, rating="buy", n_analysts=40,
+        provenance=Provenance(source="yfinance (estimate)"),
+        rejected=["forward_eps: rejected — implies +266%"],
+    )
+    ctx = _company_context(d)
+    assert "CONSENSUS" in ctx
+    assert "forward_pe" in ctx and "28.0" in ctx
+    assert "estimate" in ctx.lower()       # the unreliability caveat
+    assert "rejected" in ctx               # withheld values explained
