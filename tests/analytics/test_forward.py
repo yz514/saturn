@@ -98,3 +98,22 @@ def test_compute_forward_skips_on_nonpositive_fcf():
 
 def test_compute_forward_skips_without_quote():
     assert compute_forward(_ff(_positive_fcf_rows()), None) == []
+
+
+def test_implied_growth_records_clamp_flag_when_out_of_range():
+    # A tiny FCF against a huge market cap implies growth beyond the +60% ceiling.
+    rows = [("OperatingCashFlow", "FY2025", 100.0), ("CapitalExpenditures", "FY2025", 1.0)]
+    ms = compute_forward(_ff(rows), _quote(mc=10_000_000_000.0))
+    g = next(m for m in ms if m.name == "implied_fcf_growth")
+    assert abs(g.value - 0.60) < 1e-9   # clamped to the upper search bound
+    assert any(i.concept == "implied_growth_clamped_to_bound" for i in g.inputs)
+
+
+def test_implied_growth_no_clamp_flag_on_normal_solve():
+    rows = []
+    for i, fy in enumerate(["FY2022", "FY2023", "FY2024", "FY2025"]):
+        rows += [("OperatingCashFlow", fy, 500.0 + 100 * i), ("CapitalExpenditures", fy, 50.0),
+                 ("WeightedAverageSharesDiluted", fy, 100.0)]
+    ms = compute_forward(_ff(rows), _quote(mc=20_000.0))
+    g = next(m for m in ms if m.name == "implied_fcf_growth")
+    assert not any(i.concept == "implied_growth_clamped_to_bound" for i in g.inputs)

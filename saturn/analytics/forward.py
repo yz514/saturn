@@ -125,8 +125,13 @@ def compute_forward(fundamentals: Fundamentals | None, quote: Quote | None) -> l
     ]
     out: list[DerivedMetric | None] = []
 
-    g_imp, _converged = _solve_implied_growth(fcf0, mc, BASE_DISCOUNT)
-    out.append(_fmetric("implied_fcf_growth", g_imp, fcf[1] + [mci] + base_assumptions))
+    g_imp, converged = _solve_implied_growth(fcf0, mc, BASE_DISCOUNT)
+    imp_inputs = fcf[1] + [mci] + base_assumptions
+    if not converged:
+        # price implies growth beyond the search bounds; flag the clamp so a reader/LLM
+        # can distinguish a genuine solve from a boundary hit (value is clamped, not bogus).
+        imp_inputs.append(_assume("implied_growth_clamped_to_bound", 1.0))
+    out.append(_fmetric("implied_fcf_growth", g_imp, imp_inputs))
 
     cagr = _fcf_cagr_3y(idx, latest_fy)
     if cagr is not None:
