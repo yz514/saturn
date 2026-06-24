@@ -193,3 +193,20 @@ def test_company_context_includes_derived_metrics():
     assert "DERIVED METRICS" in ctx
     assert "net_margin" in ctx
     assert "Saturn derived" in ctx       # provenance label shown
+
+
+def test_company_context_includes_forward_block():
+    from datetime import date as _date
+    from saturn.models import CompanyDossier, DerivedMetric, Provenance
+    from saturn.workflows.equity_research import _company_context
+
+    d = CompanyDossier(ticker="X", name="X", generated_at=_date(2026, 6, 23))
+    d.derived_metrics = [
+        DerivedMetric(name="implied_fcf_growth", value=0.18, format="percent", fiscal_period="model",
+                      formula="g s.t. 2-stage DCF(g, r=10%) = market_cap",
+                      provenance=Provenance(source="Saturn (model)")),
+    ]
+    ctx = _company_context(d)
+    assert "FORWARD / EXPECTATIONS" in ctx
+    assert "implied_fcf_growth" in ctx
+    assert "Saturn model" in ctx

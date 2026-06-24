@@ -20,6 +20,9 @@ CANONICAL = {
     "pe_ratio", "ps_ratio", "pb_ratio", "p_fcf", "ev_ebitda", "ev_sales",
     "earnings_yield", "dividend_yield", "payout_ratio",
     "buyback_yield", "total_shareholder_yield",
+    "implied_fcf_growth", "expectations_gap", "implied_return",
+    "reverse_dcf_fair_value_per_share", "reverse_dcf_value_low_per_share",
+    "reverse_dcf_value_high_per_share", "margin_of_safety",
 }
 
 
@@ -44,6 +47,7 @@ def test_docs_metrics_md_is_in_sync():
 
 def test_every_catalog_name_is_computable_and_vice_versa():
     from saturn.analytics.metrics import compute_metrics
+    from saturn.analytics.forward import compute_forward
     from saturn.models import FinancialFact, Fundamentals, Provenance, Quote
 
     prov = Provenance(source="SEC EDGAR")
@@ -58,21 +62,27 @@ def test_every_catalog_name_is_computable_and_vice_versa():
         "OperatingCashFlow", "WeightedAverageSharesDiluted",
         "EarningsPerShareDiluted", "DividendsPaid", "StockRepurchased",
     ]
-    # Annual periods FY2022..FY2025 (CAGR/YoY) and 4 quarters of FY2025 (TTM/QoQ).
-    for p in ["FY2022", "FY2023", "FY2024", "FY2025"]:
+    for i, p in enumerate(["FY2022", "FY2023", "FY2024", "FY2025"]):
         for c in concepts:
             rows.append((c, p, 100.0 + len(c)))
+        # ensure positive, growing FCF and a clean share count for the forward model
+        rows += [("OperatingCashFlow", p, 500.0 + 50.0 * i), ("CapitalExpenditures", p, 50.0),
+                 ("WeightedAverageSharesDiluted", p, 100.0)]
     for q in ["Q1 FY2025", "Q2 FY2025", "Q3 FY2025", "Q4 FY2025"]:
         for c in concepts:
             rows.append((c, q, 50.0 + len(c)))
+    # dedupe (later rows win) so the FCF overrides take effect
+    merged = {}
+    for c, p, v in rows:
+        merged[(c, p)] = v
     fund = Fundamentals(facts=[
         FinancialFact(concept=c, value=v, unit="USD", fiscal_period=p, provenance=prov)
-        for (c, p, v) in rows
+        for (c, p), v in merged.items()
     ])
     quote = Quote(price=100.0, market_cap=1_000_000.0, currency="USD", provenance=Provenance(source="yfinance"))
 
-    produced = {m.name for m in compute_metrics(fund, quote)}
+    produced = {m.name for m in compute_metrics(fund, quote)} | {m.name for m in compute_forward(fund, quote)}
     assert produced == set(METRIC_CATALOG), (
         f"missing from compute: {set(METRIC_CATALOG) - produced}; "
-        f"missing from catalog: {produced - set(METRIC_CATALOG)}"
+        f"extra in compute: {produced - set(METRIC_CATALOG)}"
     )
