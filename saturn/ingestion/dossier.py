@@ -12,6 +12,7 @@ import logging
 from datetime import date
 from typing import Callable
 
+from saturn.analytics.forward import compute_forward
 from saturn.analytics.metrics import compute_metrics
 from saturn.ingestion.dispatch import route_to_source
 from saturn.ingestion.edgar import fetch_edgar
@@ -88,7 +89,7 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
         news=[NewsItem(title="[MOCK] NVIDIA announces next-gen architecture", publisher="MockWire", link="https://example.com/mock")],
         generated_at=date.today(),
     )
-    dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote)
+    dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote) + compute_forward(dossier.fundamentals, dossier.quote)
     return dossier
 
 
@@ -176,5 +177,5 @@ def build_dossier(
         gaps=gaps,
         generated_at=date.today(),
     )
-    dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote)
+    dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote) + compute_forward(dossier.fundamentals, dossier.quote)
     return dossier
