@@ -187,3 +187,27 @@ def test_render_forward_expectations_subtable():
     assert md.count("implied_fcf_growth") == 1
     # the main table still shows the derived metric
     assert "net_margin" in md
+
+
+def test_render_consensus_subsection():
+    from saturn.models import ConsensusSnapshot, Provenance
+    report = _sample_report()
+    report.company.consensus = ConsensusSnapshot(
+        forward_pe=28.0, peg=1.5, target_mean=1000.0, target_upside_pct=0.11,
+        rating="buy", n_analysts=40, last_eps_surprise_pct=0.05,
+        provenance=Provenance(source="yfinance (estimate)"),
+        rejected=["forward_eps: rejected — implies +266% vs verified trailing 4.80"],
+    )
+    md = render(report)
+    assert "Consensus / Analyst Expectations" in md
+    assert "28.0x" in md          # forward P/E
+    assert "buy" in md and "40" in md
+    assert "estimate" in md.lower()  # the best-effort caveat
+    assert "rejected" in md and "forward_eps" in md  # rejection list surfaced
+
+
+def test_render_consensus_absent():
+    report = _sample_report()
+    report.company.consensus = None
+    md = render(report)
+    assert "_No analyst consensus available._" in md
