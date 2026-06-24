@@ -112,11 +112,13 @@ def _company_context(dossier: CompanyDossier) -> str:
                 f"- {fact.concept} {period}: {fact.value} {fact.unit or ''} (source: {cite})"
             )
 
-    if dossier.derived_metrics:
+    _derived = [m for m in dossier.derived_metrics if m.provenance.source != "Saturn (model)"]
+    _forward = [m for m in dossier.derived_metrics if m.provenance.source == "Saturn (model)"]
+    if _derived:
         lines.append("\nDERIVED METRICS (computed by Saturn from as-reported data):")
         # bound display: recent annual + quarterly per metric, plus point-in-time
         by_name: dict[str, list] = {}
-        for m in dossier.derived_metrics:
+        for m in _derived:
             by_name.setdefault(m.name, []).append(m)
         for name, metrics in by_name.items():
             annual = [m for m in metrics if (m.fiscal_period or "").startswith("FY")][:_CTX_MAX_METRIC_ANNUAL]
@@ -127,6 +129,10 @@ def _company_context(dossier: CompanyDossier) -> str:
                 lines.append(
                     f"- {m.name} [{period}]: {m.value} ({m.formula}; source: Saturn derived)"
                 )
+    if _forward:
+        lines.append("\nFORWARD / EXPECTATIONS (Saturn reverse-DCF model; assumption-dependent):")
+        for m in _forward:
+            lines.append(f"- {m.name}: {m.value} ({m.formula}; source: Saturn model)")
 
     if dossier.filing_sections:
         lines.append("\nFILING SECTIONS:")
