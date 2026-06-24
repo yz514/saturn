@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from saturn.ingestion.consensus import fetch_consensus
 from saturn.ingestion.edgar import fetch_edgar
 from saturn.ingestion.errors import IngestionError
 from saturn.ingestion.fred import fetch_fred
@@ -87,13 +88,25 @@ def check_fred() -> CheckResult:
         return CheckResult(name="FRED", ok=False, detail=str(exc))
 
 
+def check_consensus(ticker: str) -> CheckResult:
+    try:
+        raw = fetch_consensus(ticker)
+        present = [k for k, v in vars(raw).items() if v is not None]
+        if present:
+            return CheckResult(name="consensus", ok=True, detail=f"{len(present)} fields (forward_pe={raw.forward_pe})")
+        return CheckResult(name="consensus", ok=False, detail="no consensus fields returned")
+    except Exception as exc:  # noqa: BLE001 - a check never raises
+        return CheckResult(name="consensus", ok=False, detail=str(exc))
+
+
 def run_checks(ticker: str, *, settings) -> list[CheckResult]:
-    """Run all dependency checks (Anthropic, yfinance, EDGAR, FRED) in order."""
+    """Run all dependency checks (Anthropic, yfinance, EDGAR, FRED, consensus) in order."""
     return [
         check_anthropic(settings),
         check_yfinance(ticker),
         check_edgar(ticker),
         check_fred(),
+        check_consensus(ticker),
     ]
 
 
