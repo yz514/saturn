@@ -80,3 +80,24 @@ def test_negative_trailing_eps_rejects_forward():
     raw = RawConsensus(forward_eps=2.0, forward_pe=50.0)
     c = validate_consensus(raw, _fund({"FY2024": -1.0}), _quote(100.0))
     assert c.forward_eps is None and any("forward_eps" in r for r in c.rejected)
+
+
+def test_fetch_consensus_maps_info_fields(monkeypatch):
+    import saturn.ingestion.consensus as cons
+
+    class _FakeTicker:
+        def __init__(self, t): pass
+        @property
+        def info(self):
+            return {"forwardEps": 9.6, "forwardPE": 30.6, "pegRatio": 2.4,
+                    "targetMeanPrice": 314.0, "targetHighPrice": 360.0, "targetLowPrice": 250.0,
+                    "recommendationKey": "buy", "numberOfAnalystOpinions": 42}
+        @property
+        def earnings_history(self):
+            return None
+
+    import types
+    monkeypatch.setattr(cons, "yf", types.SimpleNamespace(Ticker=_FakeTicker), raising=False)
+    raw = cons.fetch_consensus("AAPL")
+    assert raw.forward_eps == 9.6 and raw.forward_pe == 30.6 and raw.peg == 2.4
+    assert raw.target_mean == 314.0 and raw.rating == "buy" and raw.n_analysts == 42

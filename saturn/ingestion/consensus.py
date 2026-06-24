@@ -7,6 +7,8 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 
+import yfinance as yf  # noqa: E402  (kept module-level so tests can patch saturn.ingestion.consensus.yf)
+
 from saturn.models import ConsensusSnapshot, Fundamentals, Provenance, Quote
 
 logger = logging.getLogger(__name__)
@@ -130,3 +132,31 @@ def validate_consensus(
 
     snap.rejected = rejected
     return snap
+
+
+def fetch_consensus(ticker: str) -> RawConsensus:
+    """Read the reliable .info summary fields + last earnings surprise from yfinance.
+    Thin and defensive: returns whatever is present; never raises on a missing field."""
+    handle = yf.Ticker(ticker)
+    info = handle.info or {}
+    raw = RawConsensus(
+        forward_eps=info.get("forwardEps"),
+        forward_pe=info.get("forwardPE"),
+        peg=info.get("pegRatio") if info.get("pegRatio") is not None else info.get("trailingPegRatio"),
+        target_mean=info.get("targetMeanPrice"),
+        target_high=info.get("targetHighPrice"),
+        target_low=info.get("targetLowPrice"),
+        rating=info.get("recommendationKey"),
+        n_analysts=info.get("numberOfAnalystOpinions"),
+    )
+    # last earnings surprise (best-effort; column names vary across yfinance versions)
+    try:
+        hist = handle.earnings_history
+        if hist is not None and len(hist) and "epsActual" in hist.columns and "epsEstimate" in hist.columns:
+            row = hist.dropna(subset=["epsActual", "epsEstimate"]).tail(1)
+            if len(row):
+                raw.last_actual_eps = float(row["epsActual"].iloc[0])
+                raw.last_estimate_eps = float(row["epsEstimate"].iloc[0])
+    except Exception as exc:  # noqa: BLE001 - surprise is optional
+        logger.debug("consensus earnings_history unavailable for %s: %s", ticker, exc)
+    return raw
