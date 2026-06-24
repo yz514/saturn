@@ -171,3 +171,28 @@ def test_build_dossier_attaches_metrics():
         fred_fn=lambda t: None,
     )
     assert any(m.name == "net_margin" and m.fiscal_period == "FY2025" for m in d.derived_metrics)
+
+
+def test_build_dossier_attaches_forward_model_metrics(monkeypatch):
+    from saturn.models import Fundamentals, FinancialFact, Provenance, Quote
+
+    prov = Provenance(source="SEC EDGAR")
+    rows = []
+    for i, fy in enumerate(["FY2022", "FY2023", "FY2024", "FY2025"]):
+        rows += [("OperatingCashFlow", fy, 500.0 + 50.0 * i), ("CapitalExpenditures", fy, 50.0),
+                 ("WeightedAverageSharesDiluted", fy, 100.0)]
+    fund = Fundamentals(facts=[
+        FinancialFact(concept=c, value=v, unit="USD", fiscal_period=p, provenance=prov)
+        for (c, p, v) in rows
+    ])
+    quote = Quote(price=10.0, market_cap=5000.0, currency="USD", provenance=Provenance(source="yfinance"))
+    monkeypatch.setattr("saturn.ingestion.dossier.fetch_fred", lambda t: None)
+
+    d = build_dossier(
+        "X",
+        quote_fn=lambda t, *, mock: quote,
+        edgar_fn=lambda t: {"fundamentals": fund, "filing_sections": [], "material_events": [], "name": "X", "cik": "1"},
+        fred_fn=lambda t: None,
+    )
+    model = [m for m in d.derived_metrics if m.provenance.source == "Saturn (model)"]
+    assert any(m.name == "implied_fcf_growth" for m in model)
