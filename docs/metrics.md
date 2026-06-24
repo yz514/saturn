@@ -106,3 +106,15 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 | `buyback_yield` | percent | StockRepurchased / market_cap |  |
 | `total_shareholder_yield` | percent | (DividendsPaid + StockRepurchased) / market_cap |  |
 
+## Forward / Expectations
+
+| Metric | Format | Formula | Notes |
+| --- | --- | --- | --- |
+| `implied_fcf_growth` | percent | g s.t. 2-stage DCF(g, r=10%) = market_cap | 2-stage reverse-DCF on levered FCF (N=10, terminal 2.5%); FCFE-style (equity value vs market cap); clamped to search range [-50%, +60%]. |
+| `expectations_gap` | percent | implied_fcf_growth - trailing_3y_FCF_CAGR | Positive = priced for acceleration; negative = priced below its track record. |
+| `implied_return` | percent | r s.t. 2-stage DCF(our growth, r) = market_cap | Our growth = trailing 3-yr FCF CAGR clamped to [2.5%, 25%]. |
+| `reverse_dcf_fair_value_per_share` | per_share | 2-stage DCF(our growth, r=10%) / diluted shares | Our growth = trailing 3-yr FCF CAGR clamped to [2.5%, 25%]; FCFE-style. |
+| `reverse_dcf_value_low_per_share` | per_share | 2-stage DCF(our growth, r=12%) / diluted shares | Higher discount rate. |
+| `reverse_dcf_value_high_per_share` | per_share | 2-stage DCF(our growth, r=8%) / diluted shares | Lower discount rate. |
+| `margin_of_safety` | percent | reverse_dcf_fair_value (mid) / market_cap - 1 | Uses mid-case equity value vs market cap. |
+

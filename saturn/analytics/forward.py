@@ -71,3 +71,77 @@ def _solve_implied_return(fcf0: float, g: float, target: float) -> float | None:
     lo = max(SOLVER_R_BOUNDS[0], TERMINAL_GROWTH + 1e-4)
     hi = SOLVER_R_BOUNDS[1]
     return _bisect(lambda x: _dcf(fcf0, g, x), lo, hi, target)
+
+
+def _fcf_at(idx, period) -> tuple[float, list[MetricInput]] | None:
+    ocf = _fact(idx, "OperatingCashFlow", period)
+    capex = _fact(idx, "CapitalExpenditures", period)
+    if not ocf or not capex:
+        return None
+    return (ocf.value - capex.value, [_in(ocf), _in(capex)])
+
+
+def _fcf_cagr_3y(idx, latest_fy: str) -> float | None:
+    cur = _fcf_at(idx, latest_fy)
+    prev = _fcf_at(idx, f"FY{int(latest_fy[2:]) - 3}")
+    if not cur or not prev or cur[0] <= 0 or prev[0] <= 0:
+        return None
+    return (cur[0] / prev[0]) ** (1 / 3) - 1
+
+
+def _assume(concept: str, value: float) -> MetricInput:
+    return MetricInput(concept=concept, fiscal_period=None, value=value, source=_ASSUMPTION)
+
+
+def _fmetric(name: str, value: float | None, inputs: list[MetricInput]) -> DerivedMetric | None:
+    if value is None:
+        return None
+    d = METRIC_CATALOG[name]
+    return DerivedMetric(
+        name=name, value=value, format=d.fmt, fiscal_period="model",
+        formula=d.formula, inputs=inputs,
+        provenance=Provenance(source=_MODEL, as_of=date.today()),
+    )
+
+
+def compute_forward(fundamentals: Fundamentals | None, quote: Quote | None) -> list[DerivedMetric]:
+    if quote is None or quote.market_cap is None:
+        return []
+    idx = _index(fundamentals)
+    annual = _annual_periods(idx)
+    if not annual:
+        return []
+    latest_fy = annual[0]
+    fcf = _fcf_at(idx, latest_fy)
+    if not fcf or fcf[0] <= 0:
+        return []   # model meaningless for non-positive FCF — no fabrication
+    fcf0 = fcf[0]
+    mc = quote.market_cap
+    mci = MetricInput(concept="market_cap", fiscal_period=None, value=mc, source=quote.provenance.source)
+    base_assumptions = [
+        _assume("discount_rate", BASE_DISCOUNT),
+        _assume("terminal_growth", TERMINAL_GROWTH),
+        _assume("horizon_years", float(HORIZON_YEARS)),
+    ]
+    out: list[DerivedMetric | None] = []
+
+    g_imp, _converged = _solve_implied_growth(fcf0, mc, BASE_DISCOUNT)
+    out.append(_fmetric("implied_fcf_growth", g_imp, fcf[1] + [mci] + base_assumptions))
+
+    cagr = _fcf_cagr_3y(idx, latest_fy)
+    if cagr is not None:
+        g_fv = min(max(cagr, TERMINAL_GROWTH), GROWTH_CAP)
+        cagr_in = _assume("trailing_3y_fcf_cagr", cagr)
+        g_fv_in = _assume("growth_assumption", g_fv)
+        out.append(_fmetric("expectations_gap", g_imp - cagr, fcf[1] + [mci] + base_assumptions + [cagr_in]))
+        out.append(_fmetric("implied_return", _solve_implied_return(fcf0, g_fv, mc), fcf[1] + [mci, g_fv_in, cagr_in]))
+        shares = _fact(idx, "WeightedAverageSharesDiluted", latest_fy)
+        if shares and shares.value:
+            low_r, mid_r, high_r = DISCOUNT_RATES   # 0.08, 0.10, 0.12
+            sh = shares.value
+            base_sh = fcf[1] + [_in(shares), g_fv_in, cagr_in]
+            out.append(_fmetric("reverse_dcf_fair_value_per_share", _dcf(fcf0, g_fv, mid_r) / sh, base_sh + [_assume("discount_rate", mid_r)]))
+            out.append(_fmetric("reverse_dcf_value_low_per_share", _dcf(fcf0, g_fv, high_r) / sh, base_sh + [_assume("discount_rate", high_r)]))
+            out.append(_fmetric("reverse_dcf_value_high_per_share", _dcf(fcf0, g_fv, low_r) / sh, base_sh + [_assume("discount_rate", low_r)]))
+            out.append(_fmetric("margin_of_safety", _dcf(fcf0, g_fv, mid_r) / mc - 1, fcf[1] + [mci, g_fv_in, cagr_in, _assume("discount_rate", mid_r)]))
+    return [m for m in out if m]
