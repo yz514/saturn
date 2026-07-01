@@ -82,6 +82,29 @@ def test_negative_trailing_eps_rejects_forward():
     assert c.forward_eps is None and any("forward_eps" in r for r in c.rejected)
 
 
+def test_forward_eps_passes_for_real_hypergrowth_via_runrate():
+    # MU-like: latest quarter EPS 24.67 -> run-rate ~98.7. A forward of 150 is only
+    # +52% above the current run-rate -> PASS. (Against the stale FY2025 EPS of 7.59
+    # it would be +1876%, which the old baseline wrongly rejected.)
+    fund = _fund({"FY2025": 7.59, "Q3 FY2026": 24.67, "Q2 FY2026": 12.2,
+                  "Q1 FY2026": 4.6, "Q3 FY2025": 1.7})
+    raw = RawConsensus(forward_eps=150.0, forward_pe=1154.0 / 150.0, n_analysts=40)
+    c = validate_consensus(raw, fund, _quote(1154.0))
+    assert c.forward_eps == 150.0
+    assert not any("forward_eps" in r for r in c.rejected)
+
+
+def test_forward_eps_rejected_for_split_contamination_via_runrate():
+    # AVGO-like: latest quarter EPS 1.91 -> run-rate ~7.64. A forward of 19.40 is
+    # +154% above the current run-rate -> still REJECT (the split scrambled it).
+    fund = _fund({"FY2025": 4.77, "Q2 FY2026": 1.91, "Q1 FY2026": 1.7,
+                  "Q4 FY2025": 1.6, "Q3 FY2025": 1.5})
+    raw = RawConsensus(forward_eps=19.40, forward_pe=380.0 / 19.40, n_analysts=45)
+    c = validate_consensus(raw, fund, _quote(380.0))
+    assert c.forward_eps is None
+    assert any("forward_eps" in r for r in c.rejected)
+
+
 def test_nonpositive_price_rejects_forward_eps():
     raw = RawConsensus(forward_eps=9.0, forward_pe=11.0, target_mean=110.0,
                        target_high=120.0, target_low=100.0, n_analysts=10)

@@ -52,6 +52,39 @@ def _latest_fy_eps(fundamentals: Fundamentals | None) -> float | None:
     return max(rows, key=lambda t: t[0])[1] if rows else None
 
 
+def _quarterly_eps_desc(fundamentals: Fundamentals | None) -> list[float]:
+    """Single-quarter diluted EPS values, most-recent first."""
+    rows = []
+    for f in (fundamentals.facts if fundamentals else []):
+        p = f.fiscal_period or ""
+        if f.concept == "EarningsPerShareDiluted" and p.startswith("Q") and f.value is not None:
+            parts = p.split()
+            if len(parts) == 2 and parts[1].startswith("FY"):
+                try:
+                    rows.append(((int(parts[1][2:]), int(parts[0][1:])), f.value))
+                except ValueError:
+                    continue
+    rows.sort(key=lambda t: t[0], reverse=True)
+    return [v for _k, v in rows]
+
+
+def _trailing_eps_baseline(fundamentals: Fundamentals | None) -> float | None:
+    """Current earnings-power baseline for validating a forward EPS: the larger of TTM
+    diluted EPS and the annualized most-recent single-quarter EPS (run-rate). Judging a
+    forward estimate against the *current run-rate* rather than a stale full fiscal year
+    lets a genuine fast-grower's forward pass while still rejecting a contaminated or
+    split-discontinuous value. Falls back to latest-FY EPS when no quarterly data."""
+    qs = _quarterly_eps_desc(fundamentals)
+    candidates: list[float] = []
+    if len(qs) >= 4:
+        candidates.append(sum(qs[:4]))     # trailing twelve months
+    if qs:
+        candidates.append(qs[0] * 4)        # annualized latest quarter (run-rate)
+    if candidates:
+        return max(candidates)
+    return _latest_fy_eps(fundamentals)
+
+
 def validate_consensus(
     raw: RawConsensus, fundamentals: Fundamentals | None, quote: Quote | None
 ) -> ConsensusSnapshot:
@@ -60,7 +93,7 @@ def validate_consensus(
     rejected: list[str] = []
     snap = ConsensusSnapshot(provenance=Provenance(source=_SOURCE, as_of=date.today(), retrieved_at=date.today()))
     price = quote.price if quote else None
-    trailing_eps = _latest_fy_eps(fundamentals)
+    trailing_eps = _trailing_eps_baseline(fundamentals)
 
     # --- forward EPS / forward PE / PEG ---
     fe = raw.forward_eps
@@ -68,7 +101,7 @@ def validate_consensus(
         if price is None or price <= 0:
             rejected.append("forward_eps: no usable price to validate against")
         elif trailing_eps is None or trailing_eps <= 0:
-            rejected.append(f"forward_eps: no positive verified trailing EPS to validate against (got {trailing_eps})")
+            rejected.append(f"forward_eps: no positive current run-rate EPS to validate against (got {trailing_eps})")
         else:
             growth = fe / trailing_eps - 1
             lo, hi = EPS_GROWTH_BAND
@@ -79,7 +112,7 @@ def validate_consensus(
             )
             if not (lo <= growth <= hi):
                 rejected.append(
-                    f"forward_eps/forward_pe/peg: rejected — forward_eps implies {growth:+.0%} vs verified trailing "
+                    f"forward_eps/forward_pe/peg: rejected — forward_eps implies {growth:+.0%} vs current run-rate EPS "
                     f"{trailing_eps:.2f} (outside [{lo:+.0%}, {hi:+.0%}])"
                 )
             elif inconsistent:
