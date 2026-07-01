@@ -177,6 +177,40 @@ def render(report: ResearchReport) -> str:
         )
         out.append("")
 
+    out += ["### Consensus / Analyst Expectations (estimate)", ""]
+    cons = c.consensus
+    _has = cons and any(v is not None for v in (
+        cons.forward_pe, cons.target_mean, cons.rating, cons.last_eps_surprise_pct))
+    if _has:
+        out.append("| Field | Value |")
+        out.append("| --- | --- |")
+        if cons.forward_pe is not None:
+            out.append(f"| Forward P/E | {cons.forward_pe:.1f}x |")
+        if cons.peg is not None:
+            out.append(f"| PEG | {cons.peg:.2f} |")
+        if cons.target_mean is not None:
+            rng = f" (range {_fmt_money(cons.target_low)}–{_fmt_money(cons.target_high)})" if cons.target_low is not None else ""
+            up = f", {cons.target_upside_pct * 100:+.1f}% vs price" if cons.target_upside_pct is not None else ""
+            out.append(f"| Price target (mean) | {_fmt_money(cons.target_mean)}{rng}{up} |")
+        if cons.rating is not None:
+            out.append(f"| Analyst rating | {cons.rating} ({cons.n_analysts} analysts) |")
+        if cons.last_eps_surprise_pct is not None:
+            out.append(f"| Last EPS surprise | {cons.last_eps_surprise_pct * 100:+.1f}% |")
+        out.append("")
+        out.append(
+            "_Best-effort analyst estimates from yfinance; values failing validation "
+            "against as-reported data are dropped. Not as-reported._"
+        )
+        if cons.rejected:
+            out.append("")
+            out += [f"- rejected — {r}" for r in cons.rejected]
+    elif cons is not None and cons.rejected:
+        out.append("_No consensus values passed validation; all were rejected:_")
+        out += [f"- rejected — {r}" for r in cons.rejected]
+    else:
+        out.append("_No analyst consensus available._")
+    out.append("")
+
     out += ["## 7. Recent News and Catalysts", ""]
     if c.news:
         for item in c.news:

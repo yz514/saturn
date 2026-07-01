@@ -138,14 +138,15 @@ def test_check_yfinance_no_price(monkeypatch):
 from saturn.diagnostics import format_report, run_checks
 
 
-def test_run_checks_returns_four(monkeypatch):
+def test_run_checks_returns_five(monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr("saturn.diagnostics.check_anthropic", lambda s: CheckResult(name="Anthropic", ok=True, detail="x"))
     monkeypatch.setattr("saturn.diagnostics.check_yfinance", lambda t: CheckResult(name="yfinance", ok=True, detail="x"))
     monkeypatch.setattr("saturn.diagnostics.check_edgar", lambda t: CheckResult(name="SEC EDGAR", ok=True, detail="x"))
     monkeypatch.setattr("saturn.diagnostics.check_fred", lambda: CheckResult(name="FRED", ok=True, detail="x"))
+    monkeypatch.setattr("saturn.diagnostics.check_consensus", lambda t: CheckResult(name="consensus", ok=True, detail="x"))
     results = run_checks("AAPL", settings=SimpleNamespace(anthropic_api_key="k"))
-    assert [r.name for r in results] == ["Anthropic", "yfinance", "SEC EDGAR", "FRED"]
+    assert [r.name for r in results] == ["Anthropic", "yfinance", "SEC EDGAR", "FRED", "consensus"]
 
 
 def test_format_report_marks_and_summary():
@@ -168,3 +169,29 @@ def test_format_report_coerces_non_ascii_detail():
     out.encode("ascii")  # must not raise UnicodeEncodeError
     assert "[FAIL]" in out
     assert "Soci" in out  # ASCII portion survives; non-ASCII replaced with '?'
+
+
+def test_check_consensus_ok(monkeypatch):
+    from saturn.diagnostics import check_consensus
+    from saturn.ingestion.consensus import RawConsensus
+    monkeypatch.setattr("saturn.diagnostics.fetch_consensus",
+                        lambda t: RawConsensus(forward_pe=30.0, rating="buy", n_analysts=40))
+    r = check_consensus("AAPL")
+    assert r.ok and "forward_pe" in r.detail.lower() or r.ok
+
+
+def test_check_consensus_empty(monkeypatch):
+    from saturn.diagnostics import check_consensus
+    from saturn.ingestion.consensus import RawConsensus
+    monkeypatch.setattr("saturn.diagnostics.fetch_consensus", lambda t: RawConsensus())
+    r = check_consensus("ZZZZ")
+    assert not r.ok
+
+
+def test_check_consensus_never_raises(monkeypatch):
+    from saturn.diagnostics import check_consensus
+    def boom(t):
+        raise RuntimeError("yfinance down")
+    monkeypatch.setattr("saturn.diagnostics.fetch_consensus", boom)
+    r = check_consensus("AAPL")
+    assert not r.ok and "yfinance down" in r.detail

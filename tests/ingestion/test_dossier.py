@@ -173,6 +173,36 @@ def test_build_dossier_attaches_metrics():
     assert any(m.name == "net_margin" and m.fiscal_period == "FY2025" for m in d.derived_metrics)
 
 
+def test_build_dossier_validates_and_attaches_consensus(monkeypatch):
+    from saturn.models import Fundamentals, FinancialFact, Provenance, Quote
+    from saturn.ingestion.consensus import RawConsensus
+
+    prov = Provenance(source="SEC EDGAR")
+    fund = Fundamentals(facts=[
+        FinancialFact(concept="EarningsPerShareDiluted", value=8.27, unit="USD/shares",
+                      fiscal_period="FY2024", provenance=prov),
+    ])
+    quote = Quote(price=294.3, market_cap=1.0, currency="USD", provenance=Provenance(source="yfinance"))
+    raw = RawConsensus(forward_eps=9.6, forward_pe=30.66, target_mean=314.0,
+                       target_high=360.0, target_low=250.0, rating="buy", n_analysts=42)
+    monkeypatch.setattr("saturn.ingestion.dossier.fetch_consensus", lambda t: raw)
+
+    d = build_dossier(
+        "X",
+        quote_fn=lambda t, *, mock: quote,
+        edgar_fn=lambda t: {"fundamentals": fund, "filing_sections": [], "material_events": [], "name": "X", "cik": "1"},
+        fred_fn=lambda t: None,
+    )
+    assert d.consensus is not None
+    assert d.consensus.forward_eps == 9.6 and d.consensus.rating == "buy"
+    assert d.consensus.provenance.source == "yfinance (estimate)"
+
+
+def test_mock_dossier_has_consensus():
+    d = _mock_dossier("NVDA")
+    assert d.consensus is not None and d.consensus.rating is not None
+
+
 def test_build_dossier_attaches_forward_model_metrics(monkeypatch):
     from saturn.models import Fundamentals, FinancialFact, Provenance, Quote
 
