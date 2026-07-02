@@ -290,18 +290,42 @@ def test_stale_periods_dropped_outside_recency_window():
     assert _by_name(ms, "net_margin", "FY2018") is None   # >4 years older than latest -> dropped
 
 
+def test_ttm_bridges_over_missing_q4():
+    # Realistic mid-year: 3 current-year quarters + prior full FY + prior-year quarters.
+    # TTM(ending Q3 FY2026) = FY2025 + (Q1+Q2+Q3 FY2026) - (Q1+Q2+Q3 FY2025), because
+    # there is never a standalone Q4 10-Q to sum.
+    rows = [
+        ("Revenues", "FY2025", 280.0),
+        ("Revenues", "Q1 FY2026", 78.0), ("Revenues", "Q2 FY2026", 81.0), ("Revenues", "Q3 FY2026", 83.0),
+        ("Revenues", "Q1 FY2025", 62.0), ("Revenues", "Q2 FY2025", 64.0), ("Revenues", "Q3 FY2025", 66.0),
+    ]
+    ttm = _by_name(compute_metrics(_facts(rows), None), "revenue_ttm", "TTM")
+    # 280 + (78+81+83) - (62+64+66) = 280 + 242 - 192 = 330
+    assert ttm is not None and abs(ttm.value - 330.0) < 1e-9
+
+
+def test_ttm_uses_annual_when_year_closed():
+    # Full FY2025 annual plus its Q1-Q3 (right after the 10-K) -> TTM = the annual.
+    rows = [
+        ("Revenues", "FY2025", 280.0),
+        ("Revenues", "Q1 FY2025", 62.0), ("Revenues", "Q2 FY2025", 64.0), ("Revenues", "Q3 FY2025", 66.0),
+    ]
+    ttm = _by_name(compute_metrics(_facts(rows), None), "revenue_ttm", "TTM")
+    assert ttm is not None and abs(ttm.value - 280.0) < 1e-9
+
+
 def test_valuation_falls_back_to_fy_when_quarters_incomplete():
-    # Only 2 quarters present -> TTM (needs 4) unavailable -> valuation uses latest FY,
-    # labeled with the FY period, never silently mixed with "TTM".
+    # Partial FY2026 (2 quarters) with no prior-year quarters to align the window ->
+    # bridge can't be formed -> no TTM -> valuation uses latest FY, FY-labeled.
     f = _facts([
         ("NetIncomeLoss", "FY2025", 200.0),
         ("Revenues", "FY2025", 1000.0),
         ("StockholdersEquity", "FY2025", 5000.0),
-        ("NetIncomeLoss", "Q2 FY2025", 50.0),
-        ("NetIncomeLoss", "Q1 FY2025", 40.0),
+        ("NetIncomeLoss", "Q2 FY2026", 50.0),
+        ("NetIncomeLoss", "Q1 FY2026", 40.0),
     ])
     ms = compute_metrics(f, _quote(market_cap=10_000.0))
-    assert _by_name(ms, "net_income_ttm", "TTM") is None        # <4 quarters -> no TTM
+    assert _by_name(ms, "net_income_ttm", "TTM") is None        # bridge pieces missing -> no TTM
     pe = _by_name(ms, "pe_ratio", "FY2025")                     # falls back to latest FY, FY-labeled
     assert pe is not None and abs(pe.value - 50.0) < 1e-9       # 10000 / 200
     assert _by_name(ms, "pe_ratio", "TTM") is None
