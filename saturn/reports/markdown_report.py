@@ -14,6 +14,11 @@ _DISCLAIMER = (
 _RPT_MAX_ANNUAL = 3
 _RPT_MAX_QUARTERS = 4
 
+# Staleness gate: a concept is excluded from the table if its newest value is
+# more than this many annual years / quarterly periods behind the dataset frontier.
+_STALE_ANNUAL_YEARS = 1
+_STALE_QUARTERS = 2
+
 
 def _fmt_money(value: float | None) -> str:
     return f"${value:,.0f}" if value is not None else "N/A"
@@ -72,9 +77,15 @@ def _select_report_metrics(metrics: list) -> list:
     return out
 
 
-def _select_report_facts(facts: list) -> list:
-    """Per concept, keep the most-recent annual and quarterly periods for the
-    table, preserving the dossier's concept ordering (annual block then quarterly)."""
+def _q_ord(period: str) -> int | None:
+    fy, q = _quarter_sort_key(period)
+    return fy * 4 + q if fy > 0 else None
+
+
+def _select_report_facts(facts: list) -> tuple[list, list[tuple[str, str]]]:
+    """Per concept, keep the most-recent annual/quarterly periods for the table, but
+    EXCLUDE a concept entirely when it has no recent value (e.g. a tag migration we
+    don't map); excluded concepts are returned as (concept, latest_period) warnings."""
     by_concept: dict[str, list] = {}
     order: list[str] = []
     for f in facts:
@@ -82,17 +93,33 @@ def _select_report_facts(facts: list) -> list:
             by_concept[f.concept] = []
             order.append(f.concept)
         by_concept[f.concept].append(f)
+
+    annual_years = [_annual_sort_key(f.fiscal_period) for f in facts
+                    if not (f.fiscal_period or "").startswith("Q") and _annual_sort_key(f.fiscal_period) > 0]
+    q_ords = [o for o in (_q_ord(f.fiscal_period) for f in facts if (f.fiscal_period or "").startswith("Q")) if o is not None]
+    newest_fy = max(annual_years) if annual_years else None
+    newest_q = max(q_ords) if q_ords else None
+
     annual_out: list = []
     quarterly_out: list = []
+    warnings: list[tuple[str, str]] = []
     for concept in order:
         items = by_concept[concept]
-        annual = [x for x in items if not (x.fiscal_period or "").startswith("Q")]
-        quarterly = [x for x in items if (x.fiscal_period or "").startswith("Q")]
-        annual.sort(key=lambda x: _annual_sort_key(x.fiscal_period), reverse=True)
-        quarterly.sort(key=lambda x: _quarter_sort_key(x.fiscal_period), reverse=True)
-        annual_out.extend(annual[:_RPT_MAX_ANNUAL])
-        quarterly_out.extend(quarterly[:_RPT_MAX_QUARTERS])
-    return annual_out + quarterly_out
+        annual = sorted([x for x in items if not (x.fiscal_period or "").startswith("Q")],
+                        key=lambda x: _annual_sort_key(x.fiscal_period), reverse=True)
+        quarterly = sorted([x for x in items if (x.fiscal_period or "").startswith("Q")],
+                           key=lambda x: _quarter_sort_key(x.fiscal_period), reverse=True)
+        annual_fresh = newest_fy is None or (bool(annual) and _annual_sort_key(annual[0].fiscal_period) >= newest_fy - _STALE_ANNUAL_YEARS)
+        quarterly_fresh = newest_q is None or (bool(quarterly) and (_q_ord(quarterly[0].fiscal_period) or -1) >= newest_q - _STALE_QUARTERS)
+        kept_annual = annual[:_RPT_MAX_ANNUAL] if annual_fresh else []
+        kept_quarterly = quarterly[:_RPT_MAX_QUARTERS] if quarterly_fresh else []
+        if not kept_annual and not kept_quarterly and items:
+            latest = annual[0].fiscal_period if annual else (quarterly[0].fiscal_period if quarterly else "N/A")
+            warnings.append((concept, latest))
+            continue
+        annual_out.extend(kept_annual)
+        quarterly_out.extend(kept_quarterly)
+    return annual_out + quarterly_out, warnings
 
 
 def render(report: ResearchReport) -> str:
@@ -128,7 +155,8 @@ def render(report: ResearchReport) -> str:
     if c.fundamentals and c.fundamentals.facts:
         out.append("| Concept | Period | Value | Unit | Source |")
         out.append("| --- | --- | --- | --- | --- |")
-        for fact in _select_report_facts(c.fundamentals.facts):
+        selected, stale_warnings = _select_report_facts(c.fundamentals.facts)
+        for fact in selected:
             val = _fmt_money(fact.value) if (fact.unit or "").upper() == "USD" else (
                 fact.value if fact.value is not None else "N/A"
             )
@@ -141,6 +169,11 @@ def render(report: ResearchReport) -> str:
             f"_Showing the most recent {_RPT_MAX_ANNUAL} annual and "
             f"{_RPT_MAX_QUARTERS} quarterly periods per concept._"
         )
+        if stale_warnings:
+            out.append("")
+            out.append("_Data Quality Warnings — excluded from the table (no recent value; likely an unmapped XBRL tag):_")
+            for concept, latest in stale_warnings:
+                out.append(f"- {concept} — latest available {latest}")
         out.append("")
     out += [a.financial_snapshot, ""]
 

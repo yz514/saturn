@@ -2,10 +2,37 @@ from saturn.ingestion.dossier import _mock_dossier
 from saturn.models import (
     AnalysisSections,
     DebateSections,
+    FinancialFact,
+    Provenance,
     ResearchReport,
 )
-from saturn.reports.markdown_report import render
+from saturn.reports.markdown_report import _select_report_facts, render
 from datetime import date
+
+
+def _fact(concept, period, value):
+    return FinancialFact(concept=concept, value=value, unit="USD", fiscal_period=period,
+                         provenance=Provenance(source="SEC EDGAR"))
+
+
+def test_select_report_facts_excludes_stale_concept():
+    facts = [
+        _fact("Revenues", "FY2025", 100.0), _fact("Revenues", "FY2024", 90.0),
+        _fact("Revenues", "Q3 FY2026", 30.0),
+        _fact("PropertyPlantAndEquipmentNet", "FY2019", 28.0),   # 6y stale
+        _fact("PropertyPlantAndEquipmentNet", "Q3 FY2020", 30.0),
+    ]
+    kept, warnings = _select_report_facts(facts)
+    kept_concepts = {f.concept for f in kept}
+    assert "Revenues" in kept_concepts
+    assert "PropertyPlantAndEquipmentNet" not in kept_concepts
+    assert any(c == "PropertyPlantAndEquipmentNet" for c, _ in warnings)
+
+
+def test_select_report_facts_keeps_fresh_concepts_no_warnings():
+    facts = [_fact("Revenues", "FY2025", 100.0), _fact("Revenues", "FY2024", 90.0)]
+    kept, warnings = _select_report_facts(facts)
+    assert {f.concept for f in kept} == {"Revenues"} and warnings == []
 
 
 def _sample_report() -> ResearchReport:
