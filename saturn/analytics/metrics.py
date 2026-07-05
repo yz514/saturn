@@ -94,11 +94,19 @@ def _quarterly_periods(idx) -> list[str]:
 
 
 def _fcf(idx, period) -> tuple[float, list[MetricInput]] | None:
+    """Free cash flow = operating cash flow - capex - finance-lease principal payments.
+    Finance-lease asset acquisitions are non-cash (never in capex) and their principal
+    repayment sits in financing, so plain OCF-capex overstates FCF for lease-heavy names;
+    netting the principal matches how such companies (e.g. META) report FCF. The lease
+    term is optional: absent -> 0, so it never blocks FCF and no-lease names are unchanged."""
     ocf = _fact(idx, "OperatingCashFlow", period)
     capex = _fact(idx, "CapitalExpenditures", period)
     if not ocf or not capex:
         return None
-    return (ocf.value - capex.value, [_in(ocf), _in(capex)])
+    lease = _fact(idx, "FinanceLeasePrincipalPayments", period)
+    lease_val = lease.value if lease else 0.0
+    inputs = [_in(ocf), _in(capex)] + ([_in(lease)] if lease else [])
+    return (ocf.value - capex.value - lease_val, inputs)
 
 
 # ----- metric families -------------------------------------------------------

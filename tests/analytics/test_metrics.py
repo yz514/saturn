@@ -320,3 +320,24 @@ def test_no_fabricated_q2_q3_single_quarter_fcf():
     assert _by_name(ms, "fcf", "Q1 FY2025") is not None         # Q1 single-quarter FCF
     assert _by_name(ms, "fcf", "Q2 FY2025") is None             # not fabricated
     assert _by_name(ms, "fcf", "Q3 FY2025") is None             # not fabricated
+
+
+def test_fcf_nets_finance_lease_principal():
+    # META FY2025: 115.800 - 69.691 - 2.524 = 43.585 (Meta's reported FCF)
+    f = _facts([
+        ("OperatingCashFlow", "FY2025", 115.800),
+        ("CapitalExpenditures", "FY2025", 69.691),
+        ("FinanceLeasePrincipalPayments", "FY2025", 2.524),
+    ])
+    fcf = _by_name(compute_metrics(f, None), "fcf", "FY2025")
+    assert fcf is not None and abs(fcf.value - 43.585) < 1e-9
+
+
+def test_fcf_unchanged_when_no_finance_lease():
+    # Absent finance-lease fact -> treated as 0 -> FCF = OCF - CapEx, as before.
+    f = _facts([
+        ("OperatingCashFlow", "FY2025", 100.0),
+        ("CapitalExpenditures", "FY2025", 30.0),
+    ])
+    fcf = _by_name(compute_metrics(f, None), "fcf", "FY2025")
+    assert fcf is not None and abs(fcf.value - 70.0) < 1e-9
