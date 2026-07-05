@@ -117,3 +117,13 @@ def test_implied_growth_no_clamp_flag_on_normal_solve():
     ms = compute_forward(_ff(rows), _quote(mc=20_000.0))
     g = next(m for m in ms if m.name == "implied_fcf_growth")
     assert not any(i.concept == "implied_growth_clamped_to_bound" for i in g.inputs)
+
+
+def test_reverse_dcf_base_nets_finance_lease_principal():
+    # Adding a finance-lease principal fact lowers fcf0 -> lower reverse-DCF fair value,
+    # proving the reverse-DCF consumes the same canonical (adjusted) FCF.
+    q = _quote()
+    without = {m.name: m.value for m in compute_forward(_ff(_positive_fcf_rows()), q)}
+    withl = {m.name: m.value for m in compute_forward(
+        _ff(_positive_fcf_rows() + [("FinanceLeasePrincipalPayments", "FY2025", 100.0)]), q)}
+    assert withl["reverse_dcf_fair_value_per_share"] < without["reverse_dcf_fair_value_per_share"]

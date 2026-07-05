@@ -10,7 +10,7 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 | `operating_margin` | percent | OperatingIncomeLoss / Revenues |  |
 | `net_margin` | percent | NetIncomeLoss / Revenues |  |
 | `ebitda_margin` | percent | (OperatingIncomeLoss + DepreciationAndAmortization) / Revenues | EBITDA approximated as operating income + D&A. |
-| `fcf_margin` | percent | (OperatingCashFlow - CapitalExpenditures) / Revenues |  |
+| `fcf_margin` | percent | (OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / Revenues |  |
 
 ## Returns
 
@@ -52,8 +52,8 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 
 | Metric | Format | Formula | Notes |
 | --- | --- | --- | --- |
-| `fcf` | currency | OperatingCashFlow - CapitalExpenditures |  |
-| `fcf_conversion` | percent | (OperatingCashFlow - CapitalExpenditures) / NetIncomeLoss |  |
+| `fcf` | currency | OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments |  |
+| `fcf_conversion` | percent | (OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / NetIncomeLoss |  |
 
 ## Growth
 
@@ -70,7 +70,7 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 
 | Metric | Format | Formula | Notes |
 | --- | --- | --- | --- |
-| `fcf_per_share` | per_share | (OperatingCashFlow - CapitalExpenditures) / WeightedAverageSharesDiluted |  |
+| `fcf_per_share` | per_share | (OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / WeightedAverageSharesDiluted |  |
 | `book_value_per_share` | per_share | StockholdersEquity / WeightedAverageSharesDiluted |  |
 
 ## Trailing-twelve-month
@@ -101,7 +101,7 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 | --- | --- | --- | --- |
 | `effective_tax_rate` | percent | IncomeTaxExpenseBenefit / (NetIncomeLoss + IncomeTaxExpenseBenefit) | Pretax income approximated as net income + tax expense. |
 | `share_count_change_yoy` | percent | WeightedAverageSharesDiluted[t] / WeightedAverageSharesDiluted[t-1] - 1 | Skipped when the change is split-like (>2x or <0.5x). |
-| `dividend_coverage` | x | (OperatingCashFlow - CapitalExpenditures) / DividendsPaid |  |
+| `dividend_coverage` | x | (OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / DividendsPaid |  |
 | `accruals_ratio` | percent | (NetIncomeLoss - OperatingCashFlow) / Assets |  |
 | `buyback_yield` | percent | StockRepurchased / market_cap |  |
 | `total_shareholder_yield` | percent | (DividendsPaid + StockRepurchased) / market_cap |  |

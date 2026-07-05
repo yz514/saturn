@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date
 
 from saturn.analytics.catalog import METRIC_CATALOG
-from saturn.analytics.metrics import _annual_periods, _fact, _in, _index
+from saturn.analytics.metrics import _annual_periods, _fact, _fcf, _in, _index
 from saturn.models import DerivedMetric, Fundamentals, MetricInput, Provenance, Quote
 
 HORIZON_YEARS = 10
@@ -73,17 +73,9 @@ def _solve_implied_return(fcf0: float, g: float, target: float) -> float | None:
     return _bisect(lambda x: _dcf(fcf0, g, x), lo, hi, target)
 
 
-def _fcf_at(idx, period) -> tuple[float, list[MetricInput]] | None:
-    ocf = _fact(idx, "OperatingCashFlow", period)
-    capex = _fact(idx, "CapitalExpenditures", period)
-    if not ocf or not capex:
-        return None
-    return (ocf.value - capex.value, [_in(ocf), _in(capex)])
-
-
 def _fcf_cagr_3y(idx, latest_fy: str) -> float | None:
-    cur = _fcf_at(idx, latest_fy)
-    prev = _fcf_at(idx, f"FY{int(latest_fy[2:]) - 3}")
+    cur = _fcf(idx, latest_fy)
+    prev = _fcf(idx, f"FY{int(latest_fy[2:]) - 3}")
     if not cur or not prev or cur[0] <= 0 or prev[0] <= 0:
         return None
     return (cur[0] / prev[0]) ** (1 / 3) - 1
@@ -112,7 +104,7 @@ def compute_forward(fundamentals: Fundamentals | None, quote: Quote | None) -> l
     if not annual:
         return []
     latest_fy = annual[0]
-    fcf = _fcf_at(idx, latest_fy)
+    fcf = _fcf(idx, latest_fy)
     if not fcf or fcf[0] <= 0:
         return []   # model meaningless for non-positive FCF — no fabrication
     fcf0 = fcf[0]

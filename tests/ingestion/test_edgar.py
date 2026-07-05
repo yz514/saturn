@@ -331,3 +331,9 @@ def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
         if s.name == "Management Discussion & Analysis"
     ]
     assert any(d is not None and d.isoformat() == "2024-05-29" for d in mdna_dates)
+
+
+def test_finance_lease_principal_concept_registered():
+    from saturn.ingestion.edgar import EDGAR_CONCEPTS
+    assert "FinanceLeasePrincipalPayments" in EDGAR_CONCEPTS
+    assert "FinanceLeasePrincipalPayments" in EDGAR_CONCEPTS["FinanceLeasePrincipalPayments"]["tags"]

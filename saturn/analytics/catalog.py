@@ -29,7 +29,7 @@ _DEFS: list[MetricDef] = [
     _d("operating_margin", "Profitability", "percent", "OperatingIncomeLoss / Revenues", "Operating income as a share of revenue."),
     _d("net_margin", "Profitability", "percent", "NetIncomeLoss / Revenues", "Net income as a share of revenue."),
     _d("ebitda_margin", "Profitability", "percent", "(OperatingIncomeLoss + DepreciationAndAmortization) / Revenues", "EBITDA as a share of revenue.", "EBITDA approximated as operating income + D&A."),
-    _d("fcf_margin", "Profitability", "percent", "(OperatingCashFlow - CapitalExpenditures) / Revenues", "Free cash flow as a share of revenue."),
+    _d("fcf_margin", "Profitability", "percent", "(OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / Revenues", "Free cash flow as a share of revenue."),
     # Returns
     _d("roe", "Returns", "percent", "NetIncomeLoss / StockholdersEquity", "Return on equity.", "Annual periods only (period flow vs. point-in-time stock)."),
     _d("roa", "Returns", "percent", "NetIncomeLoss / Assets", "Return on assets.", "Annual periods only (period flow vs. point-in-time stock)."),
@@ -51,8 +51,8 @@ _DEFS: list[MetricDef] = [
     _d("capex_intensity", "Efficiency", "percent", "CapitalExpenditures / Revenues", "Capital spending as a share of revenue."),
     _d("days_sales_outstanding", "Efficiency", "ratio", "AccountsReceivableNetCurrent / Revenues * 365", "Average collection period (days), annual only."),
     # Cash
-    _d("fcf", "Cash", "currency", "OperatingCashFlow - CapitalExpenditures", "Free cash flow."),
-    _d("fcf_conversion", "Cash", "percent", "(OperatingCashFlow - CapitalExpenditures) / NetIncomeLoss", "How much net income converts to FCF (earnings quality)."),
+    _d("fcf", "Cash", "currency", "OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments", "Free cash flow."),
+    _d("fcf_conversion", "Cash", "percent", "(OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / NetIncomeLoss", "How much net income converts to FCF (earnings quality)."),
     # Growth
     _d("revenue_growth_yoy", "Growth", "percent", "Revenues[t] / Revenues[t-1] - 1", "Year-over-year revenue growth."),
     _d("eps_growth_yoy", "Growth", "percent", "EarningsPerShareDiluted[t] / EarningsPerShareDiluted[t-1] - 1", "Year-over-year diluted EPS growth.", "Skipped across a split-like share-count change (>2x or <0.5x)."),
@@ -61,7 +61,7 @@ _DEFS: list[MetricDef] = [
     _d("eps_cagr_3y", "Growth", "percent", "(EarningsPerShareDiluted[t] / EarningsPerShareDiluted[t-3]) ** (1/3) - 1", "3-year diluted EPS CAGR.", "Only when both endpoints are positive; skipped across a split-like share-count change."),
     _d("revenue_growth_qoq", "Growth", "percent", "Revenues[Q] / Revenues[Q-1] - 1", "Sequential quarter-over-quarter revenue growth."),
     # Per-share
-    _d("fcf_per_share", "Per-share", "per_share", "(OperatingCashFlow - CapitalExpenditures) / WeightedAverageSharesDiluted", "Free cash flow per diluted share."),
+    _d("fcf_per_share", "Per-share", "per_share", "(OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / WeightedAverageSharesDiluted", "Free cash flow per diluted share."),
     _d("book_value_per_share", "Per-share", "per_share", "StockholdersEquity / WeightedAverageSharesDiluted", "Book value per diluted share."),
     # Trailing-twelve-month
     _d("revenue_ttm", "Trailing-twelve-month", "currency", "Revenues: latest full FY + current-year YTD - prior-year YTD", "Trailing-twelve-month revenue.", "Bridges the missing Q4 (no standalone Q4 10-Q); year-closed uses the annual."),
@@ -80,7 +80,7 @@ _DEFS: list[MetricDef] = [
     # Quality & capital return
     _d("effective_tax_rate", "Quality & capital return", "percent", "IncomeTaxExpenseBenefit / (NetIncomeLoss + IncomeTaxExpenseBenefit)", "Effective tax rate.", "Pretax income approximated as net income + tax expense."),
     _d("share_count_change_yoy", "Quality & capital return", "percent", "WeightedAverageSharesDiluted[t] / WeightedAverageSharesDiluted[t-1] - 1", "Diluted share-count change (dilution signal).", "Skipped when the change is split-like (>2x or <0.5x)."),
-    _d("dividend_coverage", "Quality & capital return", "x", "(OperatingCashFlow - CapitalExpenditures) / DividendsPaid", "FCF coverage of dividends (latest FY)."),
+    _d("dividend_coverage", "Quality & capital return", "x", "(OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / DividendsPaid", "FCF coverage of dividends (latest FY)."),
     _d("accruals_ratio", "Quality & capital return", "percent", "(NetIncomeLoss - OperatingCashFlow) / Assets", "Accruals vs assets; high values flag lower earnings quality."),
     _d("buyback_yield", "Quality & capital return", "percent", "StockRepurchased / market_cap", "Buyback yield (latest FY repurchases)."),
     _d("total_shareholder_yield", "Quality & capital return", "percent", "(DividendsPaid + StockRepurchased) / market_cap", "Dividends + buybacks vs market cap (latest FY)."),
