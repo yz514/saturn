@@ -36,7 +36,7 @@ EDGAR_CONCEPTS: dict[str, dict] = {
     "SellingGeneralAndAdministrativeExpense": {"unit": "USD", "tags": ["SellingGeneralAndAdministrativeExpense"]},
     "ResearchAndDevelopmentExpense": {"unit": "USD", "tags": ["ResearchAndDevelopmentExpense"]},
     "OperatingIncomeLoss": {"unit": "USD", "tags": ["OperatingIncomeLoss"]},
-    "InterestExpense": {"unit": "USD", "tags": ["InterestExpense", "InterestExpenseDebt", "InterestAndDebtExpense"]},
+    "InterestExpense": {"unit": "USD", "tags": ["InterestExpense", "InterestExpenseDebt", "InterestAndDebtExpense", "InterestExpenseNonoperating"]},
     "IncomeTaxExpenseBenefit": {"unit": "USD", "tags": ["IncomeTaxExpenseBenefit"]},
     "NetIncomeLoss": {"unit": "USD", "tags": ["NetIncomeLoss", "ProfitLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"]},
     # Per-share / shares
@@ -51,7 +51,7 @@ EDGAR_CONCEPTS: dict[str, dict] = {
     "LiabilitiesCurrent": {"unit": "USD", "tags": ["LiabilitiesCurrent"]},
     "LongTermDebt": {"unit": "USD", "tags": ["LongTermDebtNoncurrent", "LongTermDebt"]},
     "Inventory": {"unit": "USD", "tags": ["InventoryNet"]},
-    "PropertyPlantAndEquipmentNet": {"unit": "USD", "tags": ["PropertyPlantAndEquipmentNet"]},
+    "PropertyPlantAndEquipmentNet": {"unit": "USD", "tags": ["PropertyPlantAndEquipmentNet", "PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization"]},  # migrated tag bundles finance-lease ROU assets with owned PP&E (post-ASC842)
     "StockholdersEquity": {"unit": "USD", "tags": ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"]},
     "RetainedEarnings": {"unit": "USD", "tags": ["RetainedEarningsAccumulatedDeficit"]},
     "CashAndCashEquivalents": {"unit": "USD", "tags": ["CashAndCashEquivalentsAtCarryingValue"]},

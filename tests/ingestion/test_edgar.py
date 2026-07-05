@@ -277,6 +277,34 @@ def test_annual_instant_keyed_by_end_recovers_all_years():
     assert eq.get("FY2024") == 800
 
 
+def _cf_migrated_interest():
+    # Plain InterestExpense stops at FY2023; recent years only under InterestExpenseNonoperating.
+    def _fy(y, val):
+        return {"start": f"{y}-01-01", "end": f"{y}-12-31", "val": val, "fy": y, "fp": "FY",
+                "form": "10-K", "filed": f"{y+1}-01-15"}
+    return {"cik": 723125, "facts": {"us-gaap": {
+        "InterestExpense": {"units": {"USD": [_fy(2022, 189_000_000), _fy(2023, 388_000_000)]}},
+        "InterestExpenseNonoperating": {"units": {"USD": [
+            {"start": "2023-01-01", "end": "2023-12-31", "val": 999, "fy": 2023, "fp": "FY", "form": "10-K", "filed": "2024-01-15"},
+            _fy(2024, 562_000_000), _fy(2025, 477_000_000)]}},
+    }}}
+
+
+def test_interest_expense_alias_captures_migrated_tag():
+    f = _parse_companyfacts(_cf_migrated_interest(), max_years=4)
+    ie = {x.fiscal_period: x.value for x in f.facts if x.concept == "InterestExpense"}
+    assert ie.get("FY2025") == 477_000_000       # recovered from InterestExpenseNonoperating
+    assert ie.get("FY2024") == 562_000_000
+    assert ie.get("FY2023") == 388_000_000        # plain tag wins the overlap (not 999)
+
+
+def test_ppe_and_interest_aliases_registered():
+    from saturn.ingestion.edgar import EDGAR_CONCEPTS
+    assert "InterestExpenseNonoperating" in EDGAR_CONCEPTS["InterestExpense"]["tags"]
+    assert ("PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization"
+            in EDGAR_CONCEPTS["PropertyPlantAndEquipmentNet"]["tags"])
+
+
 def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
     from datetime import date as _date
 
