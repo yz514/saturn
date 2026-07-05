@@ -64,9 +64,9 @@ _DEFS: list[MetricDef] = [
     _d("fcf_per_share", "Per-share", "per_share", "(OperatingCashFlow - CapitalExpenditures) / WeightedAverageSharesDiluted", "Free cash flow per diluted share."),
     _d("book_value_per_share", "Per-share", "per_share", "StockholdersEquity / WeightedAverageSharesDiluted", "Book value per diluted share."),
     # Trailing-twelve-month
-    _d("revenue_ttm", "Trailing-twelve-month", "currency", "sum(Revenues over last 4 single quarters)", "Trailing-twelve-month revenue."),
-    _d("net_income_ttm", "Trailing-twelve-month", "currency", "sum(NetIncomeLoss over last 4 single quarters)", "Trailing-twelve-month net income."),
-    _d("eps_ttm", "Trailing-twelve-month", "per_share", "sum(EarningsPerShareDiluted over last 4 single quarters)", "Trailing-twelve-month diluted EPS."),
+    _d("revenue_ttm", "Trailing-twelve-month", "currency", "Revenues: latest full FY + current-year YTD - prior-year YTD", "Trailing-twelve-month revenue.", "Bridges the missing Q4 (no standalone Q4 10-Q); year-closed uses the annual."),
+    _d("net_income_ttm", "Trailing-twelve-month", "currency", "NetIncomeLoss: latest full FY + current-year YTD - prior-year YTD", "Trailing-twelve-month net income.", "Bridges the missing Q4 (no standalone Q4 10-Q); year-closed uses the annual."),
+    _d("eps_ttm", "Trailing-twelve-month", "per_share", "EarningsPerShareDiluted: latest full FY + current-year YTD - prior-year YTD", "Trailing-twelve-month diluted EPS.", "Approximate (per-period diluted EPS not perfectly additive); bridges the missing Q4."),
     # Valuation
     _d("pe_ratio", "Valuation", "x", "market_cap / net_income_ttm", "Price/earnings (TTM, else latest FY)."),
     _d("ps_ratio", "Valuation", "x", "market_cap / revenue_ttm", "Price/sales (TTM, else latest FY)."),

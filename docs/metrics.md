@@ -77,9 +77,9 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 
 | Metric | Format | Formula | Notes |
 | --- | --- | --- | --- |
-| `revenue_ttm` | currency | sum(Revenues over last 4 single quarters) |  |
-| `net_income_ttm` | currency | sum(NetIncomeLoss over last 4 single quarters) |  |
-| `eps_ttm` | per_share | sum(EarningsPerShareDiluted over last 4 single quarters) |  |
+| `revenue_ttm` | currency | Revenues: latest full FY + current-year YTD - prior-year YTD | Bridges the missing Q4 (no standalone Q4 10-Q); year-closed uses the annual. |
+| `net_income_ttm` | currency | NetIncomeLoss: latest full FY + current-year YTD - prior-year YTD | Bridges the missing Q4 (no standalone Q4 10-Q); year-closed uses the annual. |
+| `eps_ttm` | per_share | EarningsPerShareDiluted: latest full FY + current-year YTD - prior-year YTD | Approximate (per-period diluted EPS not perfectly additive); bridges the missing Q4. |
 
 ## Valuation
 

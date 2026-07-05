@@ -357,12 +357,42 @@ def _quality(idx, period) -> list[DerivedMetric | None]:
 
 
 def _ttm(idx, concept) -> tuple[float, list[MetricInput]] | None:
-    qs = _quarterly_periods(idx)[:4]
-    facts = [_fact(idx, concept, q) for q in qs]
-    facts = [f for f in facts if f]
-    if len(facts) < 4:
+    """Trailing-twelve-month total for a flow concept, correct across the Q4 gap
+    (companies never file a standalone Q4 10-Q, so the four most-recent single quarters
+    span more than a year). TTM = latest full FY + current-year YTD - prior-year YTD
+    through the same quarter. Returns None (never a wrong sum-of-4) when the year is
+    mid-stream and the aligning pieces aren't available."""
+    quarters = [p for p in _quarterly_periods(idx) if _fact(idx, concept, p) is not None]
+    if not quarters:
         return None
-    return (sum(f.value for f in facts), [_in(f) for f in facts])
+    cur_year = int(quarters[0].split()[1][2:])
+    cur_qnums = sorted(int(p.split()[0][1:]) for p in quarters if int(p.split()[1][2:]) == cur_year)
+
+    # Year already closed -> the reported annual IS the trailing-twelve-month figure.
+    cur_annual = _fact(idx, concept, f"FY{cur_year}")
+    if cur_annual is not None:
+        return (cur_annual.value, [_in(cur_annual)])
+
+    def _q_facts(year: int, nums: list[int]):
+        fs = [_fact(idx, concept, f"Q{n} FY{year}") for n in nums]
+        return fs if all(f is not None for f in fs) else None
+
+    # A full four quarters of the current year -> sum them directly.
+    if cur_qnums == [1, 2, 3, 4]:
+        fs = _q_facts(cur_year, cur_qnums)
+        return (sum(f.value for f in fs), [_in(f) for f in fs]) if fs else None
+
+    # Partial year -> bridge off the prior full FY (needs contiguous Q1..Qk in both years).
+    if cur_qnums != list(range(1, len(cur_qnums) + 1)):
+        return None
+    prior_annual = _fact(idx, concept, f"FY{cur_year - 1}")
+    cur_fs = _q_facts(cur_year, cur_qnums)
+    prior_fs = _q_facts(cur_year - 1, cur_qnums)
+    if prior_annual is None or cur_fs is None or prior_fs is None:
+        return None
+    ttm = prior_annual.value + sum(f.value for f in cur_fs) - sum(f.value for f in prior_fs)
+    inputs = [_in(prior_annual)] + [_in(f) for f in cur_fs] + [_in(f) for f in prior_fs]
+    return (ttm, inputs)
 
 
 def _ttm_or_fy(idx, concept) -> tuple[float, str, list[MetricInput]] | None:
