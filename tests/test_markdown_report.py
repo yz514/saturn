@@ -192,6 +192,35 @@ def test_render_groups_financials_and_shows_events():
     assert "## 16. Sources" in md                              # renumbered
 
 
+def _section7(md: str) -> str:
+    return md.split("## 7. Recent News and Catalysts")[1].split("## 8.")[0]
+
+
+def test_recent_news_falls_back_to_material_events_when_news_empty():
+    report = _sample_report()
+    report.company.news = []                       # no third-party news feed
+    assert report.company.material_events          # mock dossier has an 8-K
+    sec = _section7(render(report))
+    assert "_No recent news available._" not in sec
+    assert str(report.company.material_events[0].filing_date) in sec   # 8-K date listed
+    assert "SEC 8-K filings" in sec                                    # source note
+
+
+def test_recent_news_prefers_yfinance_news_when_present():
+    report = _sample_report()
+    assert report.company.news                      # mock has yfinance news
+    sec = _section7(render(report))
+    assert report.company.news[0].title in sec
+    assert "SEC 8-K filings" not in sec             # events path not used
+
+
+def test_recent_news_none_when_no_news_and_no_events():
+    report = _sample_report()
+    report.company.news = []
+    report.company.material_events = []
+    assert "_No recent news available._" in _section7(render(report))
+
+
 def test_render_forward_expectations_subtable():
     from saturn.models import DerivedMetric, MetricInput, Provenance
     report = _sample_report()

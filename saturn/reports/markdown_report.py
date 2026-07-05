@@ -13,6 +13,7 @@ _DISCLAIMER = (
 # full history; this only bounds what the markdown report renders for readability.
 _RPT_MAX_ANNUAL = 3
 _RPT_MAX_QUARTERS = 4
+_RPT_MAX_CATALYSTS = 6
 
 # Staleness gate: a concept is excluded from the table if its newest value is
 # more than this many annual years / quarterly periods behind the dataset frontier.
@@ -120,6 +121,23 @@ def _select_report_facts(facts: list) -> tuple[list, list[tuple[str, str]]]:
         annual_out.extend(kept_annual)
         quarterly_out.extend(kept_quarterly)
     return annual_out + quarterly_out, warnings
+
+
+def _render_catalysts_from_events(events: list) -> list[str]:
+    """Compact catalyst lines from recent 8-K material events, used for §7 when no
+    third-party news feed is available. Full excerpts stay in §15 (no duplication)."""
+    lines: list[str] = []
+    for ev in sorted(events, key=lambda e: e.filing_date, reverse=True)[:_RPT_MAX_CATALYSTS]:
+        head = f"- **{ev.filing_date}** — {ev.title or ev.form}"
+        if ev.item_codes:
+            head += f" (items {', '.join(ev.item_codes)})"
+        if ev.provenance.source_url:
+            head += f" — [filing]({ev.provenance.source_url})"
+        lines.append(head)
+    if lines:
+        lines.append("")
+        lines.append("_Recent catalysts from SEC 8-K filings; no third-party news feed available._")
+    return lines
 
 
 def render(report: ResearchReport) -> str:
@@ -252,6 +270,8 @@ def render(report: ResearchReport) -> str:
                 out.append(f"- [{item.title}]({item.link}){suffix}")
             else:
                 out.append(f"- {item.title}{suffix}")
+    elif c.material_events:
+        out += _render_catalysts_from_events(c.material_events)
     else:
         out.append("_No recent news available._")
     out.append("")
