@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from saturn.analytics.forward import is_reverse_dcf_low_confidence
 from saturn.models import ResearchReport
 
 _DISCLAIMER = (
@@ -226,6 +227,13 @@ def render(report: ResearchReport) -> str:
             "_Reverse-DCF model (10-yr horizon, 2.5% terminal growth, 8/10/12% discount). "
             "Model estimate from price + as-reported FCF, not as-reported. See docs/metrics.md._"
         )
+        if is_reverse_dcf_low_confidence(_forward):
+            out.append("")
+            out.append(
+                "_⚠️ **Low confidence:** the price implies FCF growth beyond the model's bounds, so the "
+                "trailing FCF base is likely cycle-depressed. Treat fair value / margin of safety as a "
+                "diagnostic, not a primary valuation._"
+            )
         out.append("")
 
     out += ["### Consensus / Analyst Expectations (estimate)", ""]

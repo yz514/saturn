@@ -9,6 +9,7 @@ from typing import TypeVar
 
 from pydantic import ValidationError
 
+from saturn.analytics.forward import is_reverse_dcf_low_confidence
 from saturn.llm.base import LLMClient
 from saturn.models import (
     AnalysisSections,
@@ -133,6 +134,14 @@ def _company_context(dossier: CompanyDossier) -> str:
         lines.append("\nFORWARD / EXPECTATIONS (Saturn reverse-DCF model; assumption-dependent):")
         for m in _forward:
             lines.append(f"- {m.name}: {m.value} ({m.formula}; source: Saturn model)")
+        if is_reverse_dcf_low_confidence(_forward):
+            lines.append(
+                "  NOTE: reverse-DCF is LOW CONFIDENCE here — the price implies FCF growth beyond the "
+                "model's bounds, so the trailing FCF base is likely cycle-depressed (e.g. a capex-heavy "
+                "trough year). Treat the fair value / margin of safety as a rough diagnostic, NOT a "
+                "primary valuation, and do NOT lead the thesis with it; lean on forward-earnings and "
+                "cycle-based lenses instead."
+            )
 
     cons = dossier.consensus
     if cons is not None:

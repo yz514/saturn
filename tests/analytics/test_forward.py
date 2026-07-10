@@ -2,7 +2,28 @@ from saturn.analytics.forward import (
     _dcf,
     _solve_implied_growth,
     _solve_implied_return,
+    is_reverse_dcf_low_confidence,
 )
+from saturn.models import DerivedMetric, MetricInput, Provenance
+
+
+def _fwd_metric(name, value, inputs=()):
+    return DerivedMetric(name=name, value=value, format="x", formula="f",
+                         inputs=list(inputs), provenance=Provenance(source="Saturn (model)"))
+
+
+def test_reverse_dcf_low_confidence_on_clamped_growth():
+    clamp = MetricInput(concept="implied_growth_clamped_to_bound", value=1.0, source="Saturn (model)")
+    assert is_reverse_dcf_low_confidence([_fwd_metric("implied_fcf_growth", 0.60, [clamp])]) is True
+
+
+def test_reverse_dcf_low_confidence_on_extreme_margin_of_safety():
+    assert is_reverse_dcf_low_confidence([_fwd_metric("margin_of_safety", -0.90)]) is True
+
+
+def test_reverse_dcf_high_confidence_when_normal():
+    metrics = [_fwd_metric("implied_fcf_growth", 0.18), _fwd_metric("margin_of_safety", -0.30)]
+    assert is_reverse_dcf_low_confidence(metrics) is False
 
 
 def test_dcf_matches_hand_computation():
