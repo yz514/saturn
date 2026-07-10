@@ -243,6 +243,20 @@ def test_render_forward_expectations_subtable():
     assert md.count("implied_fcf_growth") == 1
     # the main table still shows the derived metric
     assert "net_margin" in md
+    assert "Low confidence" not in md   # normal case (MoS -30%, no clamp)
+
+
+def test_render_forward_low_confidence_caveat():
+    from saturn.models import DerivedMetric, MetricInput, Provenance
+    report = _sample_report()
+    report.company.derived_metrics = [
+        DerivedMetric(name="implied_fcf_growth", value=0.60, format="percent", fiscal_period="model",
+                      formula="g s.t. 2-stage DCF(g, r=10%) = market_cap",
+                      inputs=[MetricInput(concept="implied_growth_clamped_to_bound", value=1.0, source="Saturn (model)")],
+                      provenance=Provenance(source="Saturn (model)")),
+    ]
+    md = render(report)
+    assert "Low confidence" in md and "cycle-depressed" in md
 
 
 def test_render_consensus_subsection():

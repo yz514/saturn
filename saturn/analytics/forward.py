@@ -142,3 +142,22 @@ def compute_forward(fundamentals: Fundamentals | None, quote: Quote | None) -> l
             out.append(_fmetric("reverse_dcf_value_high_per_share", _dcf(fcf0, g_fv, low_r) / sh, base_sh + [_assume("discount_rate", low_r)]))
             out.append(_fmetric("margin_of_safety", _dcf(fcf0, g_fv, mid_r) / mc - 1, fcf[1] + [mci, g_fv_in, cagr_in, _assume("discount_rate", mid_r)]))
     return [m for m in out if m]
+
+
+_EXTREME_MOS = -0.60
+
+
+def is_reverse_dcf_low_confidence(forward_metrics: list[DerivedMetric]) -> bool:
+    """True when the reverse-DCF's FCF base looks cycle-distorted, so the fair value is a
+    diagnostic rather than a primary valuation. Signalled either by the price implying
+    growth beyond the model's search ceiling (`implied_growth_clamped_to_bound` — the base
+    is too low relative to price, e.g. a trough-cyclical) or by an extreme margin of
+    safety (< -60%). Consumers (context/report) surface a caveat when this is true."""
+    for m in forward_metrics:
+        if m.name == "implied_fcf_growth" and any(
+            i.concept == "implied_growth_clamped_to_bound" for i in m.inputs
+        ):
+            return True
+        if m.name == "margin_of_safety" and m.value is not None and m.value < _EXTREME_MOS:
+            return True
+    return False
