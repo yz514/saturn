@@ -178,13 +178,15 @@ class DebateSections(BaseModel):
 
 
 class CriticFinding(BaseModel):
-    """One issue the Critic found: a report claim not supported by the data."""
-    claim: str
-    section: str
-    category: str   # unsupported_number | contradiction | over_weighting | unverified_claim
-    verdict: str    # contradicted | unsupported | flagged
-    evidence: str
-    severity: str   # high | medium | low
+    """One issue the Critic found: a report claim not supported by the data.
+    Fields default so a finding missing one (imperfect LLM JSON) still validates
+    rather than discarding the whole review."""
+    claim: str = ""
+    section: str = ""
+    category: str = "unverified_claim"   # unsupported_number | contradiction | over_weighting | unverified_claim
+    verdict: str = ""                     # contradicted | unsupported | flagged
+    evidence: str = ""
+    severity: str = "medium"              # high | medium | low
 
 
 class CriticReview(BaseModel):

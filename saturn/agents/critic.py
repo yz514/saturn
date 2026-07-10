@@ -5,7 +5,7 @@ import json
 import logging
 import re
 
-from saturn.models import CompanyDossier, CriticReview
+from saturn.models import CompanyDossier, CriticFinding, CriticReview, Provenance
 
 logger = logging.getLogger(__name__)
 _MAX_OUTPUT_TOKENS = 8192
@@ -56,8 +56,10 @@ CRITIC_SYSTEM = (
     "(category unsupported_number); (2) internal contradictions — a statement conflicting "
     "with another statement or a table in the report (category contradiction); (3) whether "
     "the thesis leads with a signal flagged LOW CONFIDENCE (category over_weighting). "
-    "Quote claims exactly. Do NOT invent issues; if a claim checks out, omit it. "
-    "Respond with ONLY a valid JSON object, no prose, no code fences."
+    "Quote claims exactly but keep each 'claim' a SHORT quote (under 20 words). Do NOT "
+    "invent issues; if a claim checks out, omit it. Respond with ONLY a single valid JSON "
+    "object — no prose, no code fences — and escape all quotes and newlines inside string "
+    "values so the JSON parses."
 )
 
 
@@ -77,23 +79,54 @@ def _critic_prompt(analysis, debate, context: str, low_conf: bool) -> str:
     )
 
 
+def _safe_int(v) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _build_review(data: dict, dossier: CompanyDossier) -> CriticReview:
+    """Build a CriticReview from parsed JSON, validating each finding INDIVIDUALLY so one
+    malformed finding is skipped rather than discarding the whole review. Then apply the
+    deterministic backstop (drop unsupported_number findings whose $ figure is grounded)."""
+    findings: list[CriticFinding] = []
+    for raw_f in (data.get("findings") or []):
+        try:
+            findings.append(CriticFinding.model_validate(raw_f))
+        except Exception:  # noqa: BLE001 - skip a single malformed finding
+            continue
+    findings = [
+        f for f in findings
+        if not (f.category == "unsupported_number" and is_dollar_grounded(f.claim, dossier))
+    ]
+    return CriticReview(
+        findings=findings,
+        claims_checked=_safe_int(data.get("claims_checked")),
+        summary=str(data.get("summary") or ""),
+        provenance=Provenance(source="Saturn (critic)"),
+    )
+
+
 def critique(analysis, debate, dossier: CompanyDossier, llm, *, model: str | None = None) -> CriticReview | None:
-    """Advisory verification. Returns None (soft-fail) on any LLM/parse error."""
+    """Advisory verification. Resilient to imperfect LLM JSON: retries once on a parse
+    failure, then validates findings individually. Returns None (soft-fail) only when both
+    attempts fail to yield parseable JSON — never breaks the report."""
     from saturn.analytics.forward import is_reverse_dcf_low_confidence
     from saturn.workflows.equity_research import _company_context, _extract_json
     try:
         fwd = [m for m in dossier.derived_metrics if m.provenance.source == "Saturn (model)"]
         prompt = _critic_prompt(analysis, debate, _company_context(dossier), is_reverse_dcf_low_confidence(fwd))
-        raw = llm.complete(CRITIC_SYSTEM, prompt, model=model, max_tokens=_MAX_OUTPUT_TOKENS)
-        data = json.loads(_extract_json(raw))
-        data["provenance"] = {"source": "Saturn (critic)"}
-        review = CriticReview.model_validate(data)
+        strict = "\n\nIMPORTANT: your previous reply was not valid JSON. Return ONLY a single, strictly valid JSON object; escape every quote and newline inside string values."
+        for attempt in range(2):
+            raw = llm.complete(CRITIC_SYSTEM, prompt if attempt == 0 else prompt + strict,
+                               model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+            try:
+                return _build_review(json.loads(_extract_json(raw)), dossier)
+            except Exception:  # noqa: BLE001 - malformed JSON; retry once then give up
+                continue
+        logger.warning("critic unavailable for %s: JSON unparseable after retry", getattr(dossier, "ticker", "?"))
+        return None
     except Exception as exc:  # noqa: BLE001 - critic is advisory, never breaks the report
         logger.warning("critic unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)
         return None
-    # deterministic backstop: drop unsupported_number findings whose $ figure IS grounded
-    review.findings = [
-        f for f in review.findings
-        if not (f.category == "unsupported_number" and is_dollar_grounded(f.claim, dossier))
-    ]
-    return review

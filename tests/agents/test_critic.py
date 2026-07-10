@@ -71,3 +71,31 @@ def test_critique_parses_and_applies_backstop():
 
 def test_critique_soft_fails_to_none():
     assert critique(_analysis(), _debate(), _dossier(), _BrokenLLM()) is None
+
+
+class _MissingFieldLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        # a finding missing "severity" and "verdict" -> lenient model keeps it
+        return ('{"claims_checked": 2, "summary": "s", "findings": ['
+                '{"claim": "X", "section": "bull_thesis", "category": "contradiction", "evidence": "e"}]}')
+
+
+class _RetryLLM:
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        self.calls += 1
+        return "oops not json" if self.calls == 1 else '{"claims_checked": 1, "summary": "ok", "findings": []}'
+
+
+def test_critique_keeps_finding_missing_optional_field():
+    review = critique(_analysis(), _debate(), _dossier(), _MissingFieldLLM())
+    assert review is not None and len(review.findings) == 1
+    assert review.findings[0].severity == "medium"   # defaulted, not discarded
+
+
+def test_critique_retries_once_then_succeeds():
+    llm = _RetryLLM()
+    review = critique(_analysis(), _debate(), _dossier(), llm)
+    assert review is not None and llm.calls == 2
