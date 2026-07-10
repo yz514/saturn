@@ -137,14 +137,17 @@ def test_find_exhibit_99_none_when_absent():
 
 
 def test_extract_segment_region_isolates_bu_table():
-    text = ("Micron reported record revenue of $41.456B. " + "filler " * 50 +
+    text = ("Micron reported record revenue of $41.456B; adjusted free cash flow was $18.3B. "
+            + "filler " * 50 +
             "Quarterly Business Unit Financial Results FQ3-26 "
             "Cloud Memory Business Unit Revenue $ 13,769 Gross margin 83 % "
             "Core Data Center Business Unit Revenue $ 11,524 " + "tail " * 2000)
     region = _extract_segment_region(text)
     assert region is not None
     assert "Cloud Memory" in region and "Core Data Center" in region
-    assert len(region) <= 6000
+    # the widened window also captures the preceding highlights (adjusted FCF)
+    assert "record revenue" in region and "adjusted free cash flow" in region
+    assert len(region) <= 8000
 
 
 def test_extract_segment_region_none_without_anchor():

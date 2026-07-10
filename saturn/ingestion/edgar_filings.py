@@ -50,7 +50,7 @@ def _section_between(text: str, start_pat: str, end_pats: list[str]) -> str | No
     return best or None
 
 
-_SEGMENT_MAX_CHARS = 6000
+_SEGMENT_MAX_CHARS = 8000
 
 
 def _find_exhibit_99(index_items: list[dict]) -> str | None:
@@ -64,14 +64,19 @@ def _find_exhibit_99(index_items: list[dict]) -> str | None:
 
 
 def _extract_segment_region(text: str, max_chars: int = _SEGMENT_MAX_CHARS) -> str | None:
-    """Isolate the business-unit / segment region of a stripped press release, with a
-    little leading context, capped. None when no segment table is present."""
+    """Capture the earnings-release business-unit / segment region PLUS the preceding
+    financial highlights (revenue/EPS/margins, operating cash flow, adjusted FCF, any
+    customer-agreement mention) and following guidance that cluster around the segment
+    table — so the analyst gets the quarter's cash-flow inflection and outlook, not just
+    the table. Anchored on the segment table (confirms a results release); None when
+    absent. The window reaches ~2500 chars back because the highlights/FCF precede the
+    table in the release."""
     if not text:
         return None
     m = re.search(r"business unit|reportable segment|segment (results|information|revenue)", text, re.IGNORECASE)
     if not m:
         return None
-    start = max(0, m.start() - 300)
+    start = max(0, m.start() - 2500)
     return text[start:start + max_chars]
 
 
