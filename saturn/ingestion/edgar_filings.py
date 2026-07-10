@@ -50,6 +50,31 @@ def _section_between(text: str, start_pat: str, end_pats: list[str]) -> str | No
     return best or None
 
 
+_SEGMENT_MAX_CHARS = 6000
+
+
+def _find_exhibit_99(index_items: list[dict]) -> str | None:
+    """Pick the exhibit-99 press-release document from a filing's index.json items."""
+    cands = [it.get("name", "") for it in index_items
+             if it.get("name", "").lower().endswith((".htm", ".html")) and "99" in it.get("name", "").lower()]
+    if not cands:
+        return None
+    pref = [n for n in cands if any(k in n.lower() for k in ("press", "ex99", "ex-99", "991"))]
+    return (pref or cands)[0]
+
+
+def _extract_segment_region(text: str, max_chars: int = _SEGMENT_MAX_CHARS) -> str | None:
+    """Isolate the business-unit / segment region of a stripped press release, with a
+    little leading context, capped. None when no segment table is present."""
+    if not text:
+        return None
+    m = re.search(r"business unit|reportable segment|segment (results|information|revenue)", text, re.IGNORECASE)
+    if not m:
+        return None
+    start = max(0, m.start() - 300)
+    return text[start:start + max_chars]
+
+
 def _extract_filing_sections(html: str) -> list[dict]:
     """Return [{"name", "text"}] for the targeted filing items found in `html`."""
     text = _strip_html(html)
