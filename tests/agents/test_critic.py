@@ -99,3 +99,29 @@ def test_critique_retries_once_then_succeeds():
     llm = _RetryLLM()
     review = critique(_analysis(), _debate(), _dossier(), llm)
     assert review is not None and llm.calls == 2
+
+
+def test_dollar_grounded_ignores_year_prefix():
+    d = _dossier()
+    # must find the $90.3B token (~ revenue_ttm), not be fooled by "2025" in FY2025
+    assert is_dollar_grounded("FY2025 revenue $90.3B", d) is True
+    # a bare year is not a dollar figure -> not grounded
+    assert is_dollar_grounded("during FY2025", d) is False
+
+
+class _SupportedNoiseLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        return ('{"claims_checked": 2, "summary": "s", "findings": ['
+                '{"claim": "FY2025 net income $8.5B", "section": "company_overview",'
+                ' "category": "unsupported_number", "verdict": "unsupported",'
+                ' "evidence": "NetIncomeLoss FY2025: 8539000000. Claim supported.", "severity": "low"},'
+                '{"claim": "Cloud is fastest-growing", "section": "business_segments",'
+                ' "category": "contradiction", "verdict": "contradicted",'
+                ' "evidence": "Core DC +653% > Cloud +307%", "severity": "high"}]}')
+
+
+def test_critique_drops_supported_noise():
+    review = critique(_analysis(), _debate(), _dossier(), _SupportedNoiseLLM())
+    cats = [f.category for f in review.findings]
+    assert "contradiction" in cats            # real issue kept
+    assert "unsupported_number" not in cats   # "Claim supported" noise dropped
