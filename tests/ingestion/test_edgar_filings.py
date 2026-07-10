@@ -7,6 +7,8 @@ from saturn.ingestion.edgar_filings import (
     HIGH_VALUE_8K_ITEMS,
     _extract_8k,
     _extract_filing_sections,
+    _extract_segment_region,
+    _find_exhibit_99,
     _parse_8k_items,
     _select_latest,
     _select_recent_8ks,
@@ -122,3 +124,31 @@ def test_extract_filing_sections_finds_10q_item2_mdna():
     mdna = next((s for s in sections if s["name"] == "Management Discussion & Analysis"), None)
     assert mdna is not None
     assert "Revenue for the quarter rose" in mdna["text"]
+
+
+def test_find_exhibit_99_prefers_press_release():
+    items = [{"name": "mu-20260624.htm"}, {"name": "a2026q3ex991-pressrelease.htm"},
+             {"name": "R1.htm"}, {"name": "mu-20260624.xsd"}]
+    assert _find_exhibit_99(items) == "a2026q3ex991-pressrelease.htm"
+
+
+def test_find_exhibit_99_none_when_absent():
+    assert _find_exhibit_99([{"name": "mu-20260624.htm"}, {"name": "R1.htm"}]) is None
+
+
+def test_extract_segment_region_isolates_bu_table():
+    text = ("Micron reported record revenue of $41.456B; adjusted free cash flow was $18.3B. "
+            + "filler " * 50 +
+            "Quarterly Business Unit Financial Results FQ3-26 "
+            "Cloud Memory Business Unit Revenue $ 13,769 Gross margin 83 % "
+            "Core Data Center Business Unit Revenue $ 11,524 " + "tail " * 2000)
+    region = _extract_segment_region(text)
+    assert region is not None
+    assert "Cloud Memory" in region and "Core Data Center" in region
+    # the widened window also captures the preceding highlights (adjusted FCF)
+    assert "record revenue" in region and "adjusted free cash flow" in region
+    assert len(region) <= 8000
+
+
+def test_extract_segment_region_none_without_anchor():
+    assert _extract_segment_region("Just a dividend announcement, no unit tables here.") is None

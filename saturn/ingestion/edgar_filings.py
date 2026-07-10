@@ -50,6 +50,36 @@ def _section_between(text: str, start_pat: str, end_pats: list[str]) -> str | No
     return best or None
 
 
+_SEGMENT_MAX_CHARS = 8000
+
+
+def _find_exhibit_99(index_items: list[dict]) -> str | None:
+    """Pick the exhibit-99 press-release document from a filing's index.json items."""
+    cands = [it.get("name", "") for it in index_items
+             if it.get("name", "").lower().endswith((".htm", ".html")) and "99" in it.get("name", "").lower()]
+    if not cands:
+        return None
+    pref = [n for n in cands if any(k in n.lower() for k in ("press", "ex99", "ex-99", "991"))]
+    return (pref or cands)[0]
+
+
+def _extract_segment_region(text: str, max_chars: int = _SEGMENT_MAX_CHARS) -> str | None:
+    """Capture the earnings-release business-unit / segment region PLUS the preceding
+    financial highlights (revenue/EPS/margins, operating cash flow, adjusted FCF, any
+    customer-agreement mention) and following guidance that cluster around the segment
+    table — so the analyst gets the quarter's cash-flow inflection and outlook, not just
+    the table. Anchored on the segment table (confirms a results release); None when
+    absent. The window reaches ~2500 chars back because the highlights/FCF precede the
+    table in the release."""
+    if not text:
+        return None
+    m = re.search(r"business unit|reportable segment|segment (results|information|revenue)", text, re.IGNORECASE)
+    if not m:
+        return None
+    start = max(0, m.start() - 2500)
+    return text[start:start + max_chars]
+
+
 def _extract_filing_sections(html: str) -> list[dict]:
     """Return [{"name", "text"}] for the targeted filing items found in `html`."""
     text = _strip_html(html)

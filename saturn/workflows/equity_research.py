@@ -24,7 +24,15 @@ logger = logging.getLogger(__name__)
 ANALYSIS_SYSTEM = (
     "You are a rigorous buy-side equity research analyst. Base every statement "
     "only on the provided company data. Do not invent figures. Be concise and "
-    "balanced. Respond with ONLY a valid JSON object, no prose, no code fences."
+    "balanced. Respond with ONLY a valid JSON object, no prose, no code fences. "
+    "When a \"Business Unit / Segment Results\" disclosure appears in FILING SECTIONS, "
+    "render it as a markdown table (segment, revenue, gross/operating margin) and "
+    "analyze the growth drivers by segment. Never state that segment data is "
+    "unavailable when such a disclosure is provided. That same disclosure also carries "
+    "the quarter's financial highlights (operating cash flow, adjusted free cash flow), "
+    "forward guidance, and any customer-agreement details — use the latest-quarter FCF "
+    "and guidance in the cash-flow and valuation discussion instead of relying only on "
+    "older annual figures."
 )
 
 DEBATE_SYSTEM = (
@@ -38,6 +46,7 @@ _MAX_OUTPUT_TOKENS = 8192
 _CTX_MAX_ANNUAL = 3
 _CTX_MAX_QUARTERS = 4
 _CTX_SECTION_CHARS = 1200
+_CTX_EARNINGS_SECTION_CHARS = 5000
 _CTX_MAX_EVENTS = 6
 _CTX_EVENT_CHARS = 500
 _CTX_MAX_METRIC_ANNUAL = 3
@@ -151,7 +160,10 @@ def _company_context(dossier: CompanyDossier) -> str:
     if dossier.filing_sections:
         lines.append("\nFILING SECTIONS:")
         for s in dossier.filing_sections:
-            excerpt = (s.excerpt or "")[:_CTX_SECTION_CHARS]
+            # The earnings-release segment/highlights section carries the segment table,
+            # adjusted FCF, and guidance — give it a larger budget than 10-K prose.
+            budget = _CTX_EARNINGS_SECTION_CHARS if "Segment" in s.name else _CTX_SECTION_CHARS
+            excerpt = (s.excerpt or "")[:budget]
             lines.append(f"- {s.name} (source: {s.provenance.source}): {excerpt}")
 
     if dossier.material_events:
