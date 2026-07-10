@@ -177,6 +177,24 @@ class DebateSections(BaseModel):
     final_view: str
 
 
+class CriticFinding(BaseModel):
+    """One issue the Critic found: a report claim not supported by the data."""
+    claim: str
+    section: str
+    category: str   # unsupported_number | contradiction | over_weighting | unverified_claim
+    verdict: str    # contradicted | unsupported | flagged
+    evidence: str
+    severity: str   # high | medium | low
+
+
+class CriticReview(BaseModel):
+    """Advisory verification of the drafted report against the dossier."""
+    findings: list[CriticFinding] = Field(default_factory=list)
+    claims_checked: int = 0
+    summary: str = ""
+    provenance: Provenance
+
+
 class ResearchReport(BaseModel):
     """The fully-composed research report, ready to render."""
 
@@ -188,3 +206,4 @@ class ResearchReport(BaseModel):
     model_used: str
     mock: bool
     sources: list[str] = Field(default_factory=list)
+    critic_review: CriticReview | None = None
