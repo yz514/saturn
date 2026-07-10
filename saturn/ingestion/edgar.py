@@ -49,7 +49,7 @@ EDGAR_CONCEPTS: dict[str, dict] = {
     "AssetsCurrent": {"unit": "USD", "tags": ["AssetsCurrent"]},
     "Liabilities": {"unit": "USD", "tags": ["Liabilities"]},
     "LiabilitiesCurrent": {"unit": "USD", "tags": ["LiabilitiesCurrent"]},
-    "LongTermDebt": {"unit": "USD", "tags": ["LongTermDebtNoncurrent", "LongTermDebt"]},
+    "LongTermDebt": {"unit": "USD", "tags": ["LongTermDebtNoncurrent", "LongTermDebt", "LongTermDebtAndCapitalLeaseObligations"]},  # migrated tag bundles capital-lease obligations
     "Inventory": {"unit": "USD", "tags": ["InventoryNet"]},
     "PropertyPlantAndEquipmentNet": {"unit": "USD", "tags": ["PropertyPlantAndEquipmentNet", "PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization"]},  # migrated tag bundles finance-lease ROU assets with owned PP&E (post-ASC842)
     "StockholdersEquity": {"unit": "USD", "tags": ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"]},
