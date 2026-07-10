@@ -305,6 +305,27 @@ def test_ppe_and_interest_aliases_registered():
             in EDGAR_CONCEPTS["PropertyPlantAndEquipmentNet"]["tags"])
 
 
+def test_long_term_debt_alias_captures_migrated_tag():
+    # MU's recent long-term debt (Q3 FY2026 $5.140B) lives under the combined
+    # LongTermDebtAndCapitalLeaseObligations tag, not LongTermDebtNoncurrent.
+    payload = {"cik": 723125, "facts": {"us-gaap": {
+        "LongTermDebtNoncurrent": {"units": {"USD": [
+            {"end": "2025-08-28", "val": 8_800_000_000, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-10-01"},
+        ]}},
+        "LongTermDebtAndCapitalLeaseObligations": {"units": {"USD": [
+            {"end": "2026-05-28", "val": 5_140_000_000, "fy": 2026, "fp": "Q3", "form": "10-Q", "filed": "2026-07-01"},
+        ]}},
+    }}}
+    f = _parse_companyfacts(payload)
+    ltd = {x.fiscal_period: x.value for x in f.facts if x.concept == "LongTermDebt"}
+    assert ltd.get("Q3 FY2026") == 5_140_000_000   # recovered from the migrated tag
+
+
+def test_long_term_debt_alias_registered():
+    from saturn.ingestion.edgar import EDGAR_CONCEPTS
+    assert "LongTermDebtAndCapitalLeaseObligations" in EDGAR_CONCEPTS["LongTermDebt"]["tags"]
+
+
 def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
     from datetime import date as _date
 
