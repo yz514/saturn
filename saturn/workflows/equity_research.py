@@ -10,6 +10,7 @@ from typing import TypeVar
 from pydantic import ValidationError
 
 from saturn.analytics.forward import is_reverse_dcf_low_confidence
+from saturn.agents.critic import critique
 from saturn.llm.base import LLMClient
 from saturn.models import (
     AnalysisSections,
@@ -331,6 +332,7 @@ def run(
     call_model = None if mock else model_used
     analysis = analyze(company, llm, model=call_model)
     deb = debate(company, llm, model=call_model)
+    review = critique(analysis, deb, company, llm, model=call_model)
     return ResearchReport(
         ticker=company.ticker,
         company=company,
@@ -340,4 +342,5 @@ def run(
         model_used=model_used,
         mock=mock,
         sources=_build_sources(company, mock=mock),
+        critic_review=review,
     )

@@ -11,6 +11,7 @@ def test_run_with_mock_client_populates_report():
     assert report.analysis.executive_summary.startswith("[MOCK]")
     assert report.debate.bull_thesis.startswith("[MOCK]")
     assert report.sources == ["MOCK fixture data — not real market sources"]
+    assert report.critic_review is not None
 
 
 def test_run_real_mode_builds_provenance_sources():
