@@ -24,7 +24,11 @@ logger = logging.getLogger(__name__)
 ANALYSIS_SYSTEM = (
     "You are a rigorous buy-side equity research analyst. Base every statement "
     "only on the provided company data. Do not invent figures. Be concise and "
-    "balanced. Respond with ONLY a valid JSON object, no prose, no code fences."
+    "balanced. Respond with ONLY a valid JSON object, no prose, no code fences. "
+    "When a \"Business Unit / Segment Results\" disclosure appears in FILING SECTIONS, "
+    "render it as a markdown table (segment, revenue, gross/operating margin) and "
+    "analyze the growth drivers by segment. Never state that segment data is "
+    "unavailable when such a disclosure is provided."
 )
 
 DEBATE_SYSTEM = (

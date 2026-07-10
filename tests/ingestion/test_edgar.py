@@ -365,3 +365,41 @@ def test_finance_lease_principal_concept_registered():
     from saturn.ingestion.edgar import EDGAR_CONCEPTS
     assert "FinanceLeasePrincipalPayments" in EDGAR_CONCEPTS
     assert "FinanceLeasePrincipalPayments" in EDGAR_CONCEPTS["FinanceLeasePrincipalPayments"]["tags"]
+
+
+def test_fetch_edgar_appends_segment_section(monkeypatch):
+    cf, sub = _companyfacts(), _submissions()
+    earnings = {"form": "8-K", "accession": "0000723125-26-000013", "primary_document": "x.htm",
+                "filing_date": "2026-06-24", "item_codes": ["2.02", "9.01"]}
+    monkeypatch.setattr("saturn.ingestion.edgar.ticker_to_cik", lambda t: "0001045810")
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_companyfacts", lambda cik: cf)
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_submissions", lambda cik: sub)
+    monkeypatch.setattr("saturn.ingestion.edgar._cache_full_text", lambda *a, **k: "cache://ref")
+    monkeypatch.setattr("saturn.ingestion.edgar._select_recent_8ks", lambda sub, since: [earnings])
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_filing_index",
+                        lambda cik, accn: [{"name": "ex991-press.htm"}])
+    # segment fetch reads the exhibit HTML; other _fetch_filing_html calls (10-K/10-Q) return the tenk fixture
+    def _html(cik, accn, doc):
+        if doc == "ex991-press.htm":
+            return "<p>Quarterly Business Unit Financial Results: Cloud Memory Revenue $13,769 Gross margin 83%</p>"
+        return _tenk_html()
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_filing_html", _html)
+    sections = fetch_edgar("MU")["filing_sections"]
+    seg = next((s for s in sections if s.name == "Business Unit / Segment Results (earnings release)"), None)
+    assert seg is not None and "Cloud Memory" in seg.excerpt
+    assert seg.provenance.source_url.endswith("ex991-press.htm")
+
+
+def test_fetch_edgar_no_segment_section_when_no_exhibit(monkeypatch):
+    cf, sub = _companyfacts(), _submissions()
+    monkeypatch.setattr("saturn.ingestion.edgar.ticker_to_cik", lambda t: "0001045810")
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_companyfacts", lambda cik: cf)
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_submissions", lambda cik: sub)
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_filing_html", lambda cik, accn, doc: _tenk_html())
+    monkeypatch.setattr("saturn.ingestion.edgar._cache_full_text", lambda *a, **k: "ref")
+    monkeypatch.setattr("saturn.ingestion.edgar._select_recent_8ks",
+                        lambda sub, since: [{"accession": "a", "primary_document": "x.htm",
+                        "filing_date": "2026-06-24", "item_codes": ["2.02"]}])
+    monkeypatch.setattr("saturn.ingestion.edgar._fetch_filing_index", lambda cik, accn: [{"name": "R1.htm"}])
+    sections = fetch_edgar("MU")["filing_sections"]
+    assert not any(s.name.startswith("Business Unit / Segment") for s in sections)

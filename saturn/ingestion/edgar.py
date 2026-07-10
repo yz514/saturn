@@ -17,8 +17,11 @@ from saturn.ingestion.edgar_filings import (
     HIGH_VALUE_8K_ITEMS,
     _extract_8k,
     _extract_filing_sections,
+    _extract_segment_region,
+    _find_exhibit_99,
     _select_latest,
     _select_recent_8ks,
+    _strip_html,
 )
 from saturn.ingestion.errors import DataUnavailable
 from saturn.ingestion.http import http_get
@@ -255,6 +258,36 @@ def _cache_full_text(cik: str, name: str, text: str) -> str:
     return str(path)
 
 
+def _fetch_filing_index(cik: str, accession: str) -> list[dict]:
+    url = _ARCHIVE_URL.format(cik_int=int(cik), accn_nodash=accession.replace("-", ""), doc="index.json")
+    data = json.loads(http_get(url, user_agent=_ua(), accept="application/json"))
+    return (data.get("directory", {}) or {}).get("item", []) or []
+
+
+def _fetch_segment_section(cik: str, earnings_8k: dict) -> FilingSection | None:
+    """Best-effort BU/segment table text from the earnings-release exhibit 99.
+    Returns None (never raises) when unavailable."""
+    try:
+        doc = _find_exhibit_99(_fetch_filing_index(cik, earnings_8k["accession"]))
+        if not doc:
+            return None
+        text = _strip_html(_fetch_filing_html(cik, earnings_8k["accession"], doc))
+        region = _extract_segment_region(text)
+        if not region:
+            return None
+        url = _ARCHIVE_URL.format(cik_int=int(cik), accn_nodash=earnings_8k["accession"].replace("-", ""), doc=doc)
+        as_of = date.fromisoformat(earnings_8k["filing_date"]) if earnings_8k.get("filing_date") else None
+        ref = _cache_full_text(cik, f"segment_{earnings_8k['accession']}", text)
+        return FilingSection(
+            name="Business Unit / Segment Results (earnings release)",
+            excerpt=region, full_text_cache_ref=ref,
+            provenance=Provenance(source="SEC EDGAR", source_url=url, as_of=as_of),
+        )
+    except Exception as exc:  # noqa: BLE001 - segment disclosure is optional
+        logger.debug("segment disclosure unavailable for %s: %s", cik, exc)
+        return None
+
+
 def fetch_edgar(ticker: str) -> dict:
     """Return {"fundamentals", "filing_sections", "material_events", "name", "cik"} for `ticker`.
 
@@ -339,6 +372,12 @@ def fetch_edgar(ticker: str) -> dict:
                 provenance=Provenance(source="SEC EDGAR", source_url=ev_url, as_of=date.fromisoformat(e["filing_date"])),
             )
         )
+
+    earnings = next((e for e in _select_recent_8ks(submissions, since=since) if "2.02" in e["item_codes"]), None)
+    if earnings:
+        seg = _fetch_segment_section(cik, earnings)
+        if seg:
+            filing_sections.append(seg)
 
     return {
         "fundamentals": fundamentals,
