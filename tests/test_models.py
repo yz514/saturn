@@ -135,3 +135,33 @@ def test_critic_review_model():
         provenance=Provenance(source="Saturn (critic)"))
     assert r.findings[0].category == "contradiction" and r.claims_checked == 12
     assert CriticReview(provenance=Provenance(source="Saturn (critic)")).findings == []
+
+
+def test_peer_summary_and_industry_context_models():
+    from datetime import date as _date
+    from saturn.models import PeerSummary, IndustryContext, Provenance, CompanyDossier
+
+    ps = PeerSummary(
+        ticker="NVDA",
+        role="demand",
+        revenue_growth_yoy=0.6,
+        provenance=Provenance(source="SEC EDGAR"),
+    )
+    assert ps.ticker == "NVDA"
+    assert ps.role == "demand"
+    assert ps.revenue_growth_yoy == 0.6
+    assert ps.name is None
+    assert ps.revenue_ttm is None
+    assert ps.capex is None
+    assert ps.capex_intensity is None
+
+    ic = IndustryContext(
+        peers=[ps],
+        note="n",
+        provenance=Provenance(source="SEC EDGAR"),
+    )
+    assert len(ic.peers) == 1
+    assert ic.note == "n"
+
+    d = CompanyDossier(ticker="MU", name="Micron Technology", generated_at=_date(2026, 7, 11))
+    assert d.industry_context is None
