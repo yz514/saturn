@@ -45,6 +45,12 @@ Watchlist, scheduled jobs, retry/checkpoint logic, event-driven research.
 Agent execution logs, prompt/version tracking, output quality + source-coverage
 checks, hallucination-risk checks, cost/token tracking.
 
+> **Backlog — concept-aware grounding for the Critic.** The Critic's numeric
+> backstop is magnitude-only: a wrong figure can be dropped when it collides with an
+> unrelated datum of the same size (e.g. "$2B revenue" grounding against a $2B OCF/D&A
+> line). Make grounding tie a claim's number to its *subject concept* and match the
+> right fact. Spec: `docs/superpowers/specs/2026-07-11-concept-aware-grounding-backlog.md`.
+
 ## Phase 6 — Productization
 Web dashboard, search/watchlist UI, company pages, memo archive, exports,
 notifications. Not needed yet.
