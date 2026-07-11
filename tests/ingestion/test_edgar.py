@@ -332,6 +332,11 @@ def test_backlog_contract_concepts_registered():
     assert EDGAR_CONCEPTS["ContractLiability"]["tags"] == ["ContractWithCustomerLiability"]
 
 
+def test_capex_productive_assets_alias_registered():
+    from saturn.ingestion.edgar import EDGAR_CONCEPTS
+    assert "PaymentsToAcquireProductiveAssets" in EDGAR_CONCEPTS["CapitalExpenditures"]["tags"]
+
+
 def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
     from datetime import date as _date
 

@@ -62,7 +62,7 @@ EDGAR_CONCEPTS: dict[str, dict] = {
     "AccountsReceivableNetCurrent": {"unit": "USD", "tags": ["AccountsReceivableNetCurrent"]},
     # Cash flow (USD)
     "OperatingCashFlow": {"unit": "USD", "tags": ["NetCashProvidedByUsedInOperatingActivities"]},
-    "CapitalExpenditures": {"unit": "USD", "tags": ["PaymentsToAcquirePropertyPlantAndEquipment"]},
+    "CapitalExpenditures": {"unit": "USD", "tags": ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets"]},  # AMZN et al. use ProductiveAssets
     "FinanceLeasePrincipalPayments": {"unit": "USD", "tags": ["FinanceLeasePrincipalPayments"]},
     "DepreciationAndAmortization": {"unit": "USD", "tags": ["DepreciationDepletionAndAmortization", "DepreciationAmortizationAndAccretionNet"]},
     "DividendsPaid": {"unit": "USD", "tags": ["PaymentsOfDividendsCommonStock", "PaymentsOfDividends"]},
