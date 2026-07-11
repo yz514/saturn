@@ -149,6 +149,28 @@ def test_number_grounded_handles_percent_and_ratio():
     assert is_number_grounded("during FY2025", d) is False                   # bare year, no unit
 
 
+def test_number_grounded_percentage_points_and_bps():
+    from datetime import date
+    from saturn.models import CompanyDossier, DerivedMetric, Provenance
+    prov = Provenance(source="Saturn (model)")
+    d = CompanyDossier(ticker="MU", name="Micron", generated_at=date(2026, 7, 10),
+        derived_metrics=[
+            DerivedMetric(name="expectations_gap", value=0.8356, format="percent", fiscal_period="model", formula="f", provenance=prov),
+            DerivedMetric(name="spread", value=0.0038, format="percent", fiscal_period="model", formula="f", provenance=prov)])
+    assert is_number_grounded("expectations gap of 84 percentage points", d) is True
+    assert is_number_grounded("10Y-2Y spread of 38bps", d) is True
+
+
+def test_number_grounded_uses_macro_series():
+    from datetime import date
+    from saturn.models import CompanyDossier, MacroSnapshot, MacroSeries, Provenance
+    prov = Provenance(source="FRED")
+    d = CompanyDossier(ticker="MU", name="Micron", generated_at=date(2026, 7, 10),
+        macro=MacroSnapshot(series=[MacroSeries(series_id="VIXCLS", title="VIX",
+            observations=[(date(2026, 7, 9), 15.84)], provenance=prov)]))
+    assert is_number_grounded("low VIX at 15.8", d) is True     # macro value now in the corpus
+
+
 class _ConfirmedNoiseLLM:
     def complete(self, system, prompt, *, model=None, max_tokens=2000):
         return ('{"claims_checked": 2, "summary": "s", "findings": ['

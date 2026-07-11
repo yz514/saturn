@@ -15,7 +15,8 @@ _MAX_OUTPUT_TOKENS = 8192
 # "FY2025") or a plain count is deliberately skipped as too ambiguous to match.
 _MULT = {"t": 1e12, "trillion": 1e12, "b": 1e9, "bn": 1e9, "billion": 1e9, "m": 1e6, "mn": 1e6, "million": 1e6}
 _NUM_TOKEN_RE = re.compile(
-    r"(-?\$?\s*[\d,]+(?:\.\d+)?)\s*(trillion|billion|million|bn|mn|[bmt])?\s*(%|x)?",
+    r"(-?\$?\s*[\d,]+(?:\.\d+)?)\s*(trillion|billion|million|bn|mn|[bmt](?![a-z]))?\s*"
+    r"(%|percentage points?|ppt|pp|bps|x)?",
     re.IGNORECASE,
 )
 
@@ -26,17 +27,21 @@ def _meaningful_numbers(text: str) -> list[tuple[list[float], str]]:
     out: list[tuple[list[float], str]] = []
     for m in _NUM_TOKEN_RE.finditer(text or ""):
         raw, suffix, unit = m.group(1) or "", (m.group(2) or "").lower(), (m.group(3) or "").lower()
-        if not ("$" in raw or suffix or unit):
-            continue
         digits = raw.replace("$", "").replace(",", "").replace(" ", "")
         try:
             base = float(digits)
         except ValueError:
             continue
+        # Skip a bare, unit-less year-like integer (e.g. "2025" from "FY2025"); other
+        # bare numbers (VIX 15.8, DXY 120.7) are kept so macro claims can be grounded.
+        if not ("$" in raw or suffix or unit) and "." not in digits and 1900 <= abs(base) <= 2099:
+            continue
         if suffix:
             cands = [base * _MULT.get(suffix, 1.0)]
-        elif unit == "%":
-            cands = [base / 100.0, base]   # a metric may be stored as a fraction or a percent
+        elif unit in ("%", "pp", "ppt") or unit.startswith("percentage point"):
+            cands = [base / 100.0, base]   # fraction or percent; "N percentage points" -> N/100
+        elif unit == "bps":
+            cands = [base / 10000.0, base]
         else:                              # "x" ratio, or a plain $-value
             cands = [base]
         out.append((cands, digits.lstrip("-")))
@@ -49,6 +54,13 @@ def _dossier_values(dossier: CompanyDossier) -> list[float]:
         vals += [f.value for f in dossier.fundamentals.facts if f.value is not None]
     if dossier.quote and dossier.quote.market_cap:
         vals.append(dossier.quote.market_cap)
+    if dossier.macro:
+        for s in dossier.macro.series:
+            if s.observations:
+                try:
+                    vals.append(float(s.observations[-1][1]))
+                except (TypeError, ValueError, IndexError):
+                    continue
     return vals
 
 
@@ -94,8 +106,10 @@ CRITIC_SYSTEM = (
 def _critic_prompt(analysis, debate, context: str, low_conf: bool) -> str:
     sections = {**analysis.model_dump(), **debate.model_dump()}
     report_text = "\n\n".join(f"[{k}]\n{v}" for k, v in sections.items())
-    note = ("\nNOTE: the reverse-DCF is flagged LOW CONFIDENCE; if the thesis leads with its "
-            "fair value or margin of safety, report it as category over_weighting.\n" if low_conf else "")
+    note = ("\nNOTE: the reverse-DCF is flagged LOW CONFIDENCE. Report over_weighting ONLY if "
+            "the thesis RELIES on its fair value / margin of safety as a PRIMARY argument. If the "
+            "report explicitly dismisses or caveats it (e.g. 'diagnostic only', 'not a primary "
+            "lens'), that is CORRECT handling — do NOT flag it.\n" if low_conf else "")
     return (
         "OUTPUT_SCHEMA=critic\n"
         "DRAFT REPORT (verify this prose):\n" + report_text + "\n\n"
