@@ -1,7 +1,7 @@
 """Tests for saturn/agents/critic.py — grounding helper and critique()."""
 from datetime import date
 
-from saturn.agents.critic import is_dollar_grounded
+from saturn.agents.critic import is_dollar_grounded, is_number_grounded
 from saturn.models import CompanyDossier, FilingSection, DerivedMetric, Provenance
 
 
@@ -125,3 +125,40 @@ def test_critique_drops_supported_noise():
     cats = [f.category for f in review.findings]
     assert "contradiction" in cats            # real issue kept
     assert "unsupported_number" not in cats   # "Claim supported" noise dropped
+
+
+def _pct_ratio_dossier():
+    from datetime import date
+    from saturn.models import CompanyDossier, DerivedMetric, Provenance
+    prov = Provenance(source="Saturn (derived)")
+    return CompanyDossier(
+        ticker="MU", name="Micron", generated_at=date(2026, 7, 10),
+        derived_metrics=[
+            DerivedMetric(name="operating_margin", value=0.2614, format="percent", fiscal_period="FY2025", formula="f", provenance=prov),
+            DerivedMetric(name="current_ratio", value=3.4245, format="ratio", fiscal_period="Q3 FY2026", formula="f", provenance=prov),
+            DerivedMetric(name="ev_ebitda", value=61.17, format="x", fiscal_period="FY2025", formula="f", provenance=prov),
+        ])
+
+
+def test_number_grounded_handles_percent_and_ratio():
+    d = _pct_ratio_dossier()
+    assert is_number_grounded("FY2025 operating margin: 26.1%", d) is True   # 0.261 ~ 0.2614
+    assert is_number_grounded("current ratio: 3.42x", d) is True             # 3.42 ~ 3.4245
+    assert is_number_grounded("EV/EBITDA (FY25): 61x", d) is True            # 61 ~ 61.17
+    assert is_number_grounded("margin of 99.9%", d) is False                 # ungrounded
+    assert is_number_grounded("during FY2025", d) is False                   # bare year, no unit
+
+
+class _ConfirmedNoiseLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        return ('{"claims_checked": 2, "summary": "s", "findings": ['
+                '{"claim": "Cloud Memory BU +78% QoQ", "section": "business_segments",'
+                ' "category": "unsupported_number", "verdict": "unsupported",'
+                ' "evidence": "Calculations confirmed.", "severity": "low"},'
+                '{"claim": "real mismatch", "section": "bull_thesis", "category": "contradiction",'
+                ' "verdict": "contradicted", "evidence": "report says A, data shows B", "severity": "high"}]}')
+
+
+def test_critique_drops_confirmed_noise_keeps_real_issue():
+    review = critique(_analysis(), _debate(), _pct_ratio_dossier(), _ConfirmedNoiseLLM())
+    assert [f.category for f in review.findings] == ["contradiction"]

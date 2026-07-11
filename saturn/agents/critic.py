@@ -10,28 +10,36 @@ from saturn.models import CompanyDossier, CriticFinding, CriticReview, Provenanc
 logger = logging.getLogger(__name__)
 _MAX_OUTPUT_TOKENS = 8192
 
-# A genuine dollar token is either $-prefixed (optionally with a magnitude word) OR a
-# number with a magnitude suffix. This avoids grabbing a bare year like "2025" from
-# "FY2025" as if it were a value.
-_DOLLAR_TOKEN_RE = re.compile(
-    r"\$\s*([\d,]+(?:\.\d+)?)\s*(trillion|billion|million|bn|mn|[bmt])?\b"
-    r"|\b([\d,]+(?:\.\d+)?)\s*(trillion|billion|million|bn|mn|[bmt])\b",
+# The Critic's claims carry numbers in several units: $-magnitudes, percentages, and
+# ratios ("x"). Only UNIT-bearing numbers are grounded — a bare year like "2025" (from
+# "FY2025") or a plain count is deliberately skipped as too ambiguous to match.
+_MULT = {"t": 1e12, "trillion": 1e12, "b": 1e9, "bn": 1e9, "billion": 1e9, "m": 1e6, "mn": 1e6, "million": 1e6}
+_NUM_TOKEN_RE = re.compile(
+    r"(-?\$?\s*[\d,]+(?:\.\d+)?)\s*(trillion|billion|million|bn|mn|[bmt])?\s*(%|x)?",
     re.IGNORECASE,
 )
-_MULT = {"t": 1e12, "trillion": 1e12, "b": 1e9, "bn": 1e9, "billion": 1e9, "m": 1e6, "mn": 1e6, "million": 1e6}
 
 
-def _dollar_tokens(text: str) -> list[tuple[float, str]]:
-    """(value, raw-digit-string) for every genuine dollar token in `text`."""
-    out: list[tuple[float, str]] = []
-    for m in _DOLLAR_TOKEN_RE.finditer(text or ""):
-        num = m.group(1) or m.group(3)
-        suffix = (m.group(2) or m.group(4) or "").lower()
-        try:
-            digits = num.replace(",", "")
-            out.append((float(digits) * _MULT.get(suffix, 1.0), digits))
-        except (TypeError, ValueError):
+def _meaningful_numbers(text: str) -> list[tuple[list[float], str]]:
+    """For each unit-bearing number ($, magnitude word, % or x), its plausible float
+    interpretations + raw digit string. Unit-less bare numbers are skipped."""
+    out: list[tuple[list[float], str]] = []
+    for m in _NUM_TOKEN_RE.finditer(text or ""):
+        raw, suffix, unit = m.group(1) or "", (m.group(2) or "").lower(), (m.group(3) or "").lower()
+        if not ("$" in raw or suffix or unit):
             continue
+        digits = raw.replace("$", "").replace(",", "").replace(" ", "")
+        try:
+            base = float(digits)
+        except ValueError:
+            continue
+        if suffix:
+            cands = [base * _MULT.get(suffix, 1.0)]
+        elif unit == "%":
+            cands = [base / 100.0, base]   # a metric may be stored as a fraction or a percent
+        else:                              # "x" ratio, or a plain $-value
+            cands = [base]
+        out.append((cands, digits.lstrip("-")))
     return out
 
 
@@ -44,22 +52,26 @@ def _dossier_values(dossier: CompanyDossier) -> list[float]:
     return vals
 
 
-def is_dollar_grounded(token: str, dossier: CompanyDossier, *, tol: float = 0.02) -> bool:
-    """True if ANY genuine dollar token in `token` matches a dossier fact/metric within
-    `tol`, or its digits appear in the ingested filing/press-release source text."""
-    toks = _dollar_tokens(token)
+def is_number_grounded(claim: str, dossier: CompanyDossier, *, tol: float = 0.02) -> bool:
+    """True if ANY unit-bearing number in `claim` ($, %, x, magnitude) matches a dossier
+    fact/metric within `tol`, or its digits appear in the ingested source text. Used to drop
+    unsupported_number findings whose figures are actually grounded in the data."""
+    toks = _meaningful_numbers(claim)
     if not toks:
         return False
     dvals = _dossier_values(dossier)
     source = " ".join((s.excerpt or "") for s in dossier.filing_sections).replace(",", "")
-    for v, digits in toks:
-        if v == 0:
-            continue
-        if any(dv and abs(v - dv) <= tol * abs(dv) for dv in dvals):
-            return True
+    for cands, digits in toks:
+        for v in cands:
+            if v != 0 and any(dv and abs(v - dv) <= tol * abs(dv) for dv in dvals):
+                return True
         if digits and digits in source:
             return True
     return False
+
+
+# Backward-compatible alias (percentages/ratios are handled too now, not just dollars).
+is_dollar_grounded = is_number_grounded
 
 
 CRITIC_SYSTEM = (
@@ -95,21 +107,24 @@ def _critic_prompt(analysis, debate, context: str, low_conf: bool) -> str:
     )
 
 
-# The LLM sometimes lists claims it then affirms as SUPPORTED (against instructions);
-# drop those — a finding must be a genuine problem, not a confirmation.
+# The LLM often lists claims it then AFFIRMS as supported (against instructions). Drop
+# those — a finding must be a genuine problem. Deliberately conservative (only strong
+# standalone affirmations unlikely to be negated) so real findings aren't dropped; the
+# numeric-grounding backstop handles most numeric noise regardless of wording.
 _SUPPORTED_RE = re.compile(
-    r"claim (is )?supported|is supported\b|supported\.|is correct\b|claim is correct|"
-    r"broadly consistent|matches (the )?data|consistent with the data",
+    r"\bconfirmed\b|\bcompliant\b|\bno (material )?(issue|error|problem|discrepanc)|"
+    r"\bcalculations? confirmed\b|claim (is )?supported|\bmatches (the )?data\b|"
+    r"acceptable rounding|rounding is acceptable|\bno material error\b",
     re.IGNORECASE,
 )
 
 
 def _is_non_issue(f, dossier: CompanyDossier) -> bool:
     """True when a finding isn't a real problem: its evidence affirms support, or it's an
-    unsupported_number whose dollar figure is actually grounded in the data."""
+    unsupported_number whose numbers ($/%/x) are actually grounded in the data."""
     if _SUPPORTED_RE.search(f.evidence or ""):
         return True
-    return f.category == "unsupported_number" and is_dollar_grounded(f.claim, dossier)
+    return f.category == "unsupported_number" and is_number_grounded(f.claim, dossier)
 
 
 def _safe_int(v) -> int:
