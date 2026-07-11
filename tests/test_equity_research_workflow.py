@@ -70,3 +70,10 @@ def test_run_self_repair_keeps_original_when_not_improved():
     r = run(_mock_dossier("MU"), _RepairLLM(improve=False), model_used="m", mock=False)
     assert r.debate.bear_thesis == "orig bear"                       # revision rejected
     assert r.critic_review is None or r.critic_review.repaired is False
+
+
+def test_run_populates_alpha_thesis():
+    r = run(_mock_dossier("NVDA"), MockLLMClient(), model_used="mock", mock=True)
+    assert r.alpha_thesis is not None and len(r.alpha_thesis.scenarios) == 3
+    base = next(s for s in r.alpha_thesis.scenarios if s.name == "base")
+    assert base.implied_price == 150.0            # 10 × 15 from the mock

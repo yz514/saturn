@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from saturn.analytics.forward import is_reverse_dcf_low_confidence
 from saturn.agents.critic import _actionable, _score, critique, revise
+from saturn.agents.synthesist import synthesize
 from saturn.llm.base import LLMClient
 from saturn.models import (
     AnalysisSections,
@@ -353,7 +354,8 @@ def run(
     call_model = None if mock else model_used
     analysis = analyze(company, llm, model=call_model)
     deb = debate(company, llm, model=call_model)
-    review = critique(analysis, deb, company, llm, model=call_model)
+    alpha = synthesize(analysis, deb, company, llm, model=call_model)
+    review = critique(analysis, deb, company, llm, model=call_model, alpha=alpha)
 
     # Self-repair loop: when the Critic finds actionable errors, revise the affected
     # sections, re-verify, and keep the correction only if the severity-weighted score
@@ -366,7 +368,7 @@ def run(
                 update={k: v for k, v in corrections.items() if k in AnalysisSections.model_fields})
             r_deb = deb.model_copy(
                 update={k: v for k, v in corrections.items() if k in DebateSections.model_fields})
-            r_review = critique(r_analysis, r_deb, company, llm, model=call_model)
+            r_review = critique(r_analysis, r_deb, company, llm, model=call_model, alpha=alpha)
             if r_review is not None and _score(r_review) < _score(review):
                 r_review.repaired = True
                 analysis, deb, review = r_analysis, r_deb, r_review
@@ -381,4 +383,5 @@ def run(
         mock=mock,
         sources=_build_sources(company, mock=mock),
         critic_review=review,
+        alpha_thesis=alpha,
     )
