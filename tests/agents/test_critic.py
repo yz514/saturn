@@ -29,6 +29,36 @@ def test_dollar_not_grounded():
     assert is_dollar_grounded("$999B", _dossier()) is False
 
 
+def test_number_not_grounded_on_bare_short_digit_in_source():
+    """A fabricated '$2 billion' must NOT ground merely because the digit '2'
+    appears somewhere in the filing text (e.g. 'Q2'). Regression: the source-text
+    fallback used to accept any substring, so a blatantly wrong figure got dropped."""
+    from datetime import date
+    from saturn.models import CompanyDossier, FilingSection, Provenance
+    d = CompanyDossier(ticker="MU", name="Micron", generated_at=date(2026, 7, 10),
+        filing_sections=[FilingSection(name="Q2 results",
+            excerpt="Q2 fiscal results were strong; segment 12 details follow.",
+            provenance=Provenance(source="SEC EDGAR"))])
+    assert is_number_grounded("revenue of only $2 billion", d) is False
+    # A 2-digit bare figure is likewise too ambiguous to ground by substring.
+    assert is_number_grounded("$12B in buybacks", d) is False
+
+
+def test_number_grounded_requires_multidigit_source_match():
+    """A specific 3+ significant-digit figure quoted verbatim still grounds."""
+    from datetime import date
+    from saturn.models import CompanyDossier, FilingSection, Provenance
+    d = CompanyDossier(ticker="MU", name="Micron", generated_at=date(2026, 7, 10),
+        filing_sections=[FilingSection(name="Cash flow",
+            excerpt="adjusted free cash flow was $18.3 billion", provenance=Provenance(source="SEC EDGAR"))])
+    assert is_number_grounded("$18.3B FCF", d) is True
+    # ...but not when it is only a substring of a larger, different number.
+    d2 = CompanyDossier(ticker="MU", name="Micron", generated_at=date(2026, 7, 10),
+        filing_sections=[FilingSection(name="x", excerpt="the figure was $118.35 per unit",
+            provenance=Provenance(source="SEC EDGAR"))])
+    assert is_number_grounded("$18.3B", d2) is False
+
+
 # ---- Task 3: critique() tests ----
 
 from saturn.agents.critic import critique

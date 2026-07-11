@@ -64,10 +64,20 @@ def _dossier_values(dossier: CompanyDossier) -> list[float]:
     return vals
 
 
+def _grounded_in_source(digits: str, source: str) -> bool:
+    """True only when `digits` is a specific figure (>= 3 significant digits) that appears
+    as a standalone number in `source`. Guards against spurious substring matches: a bare
+    '2' or '12' trivially occurs in any long filing (dates, notes, other figures), and a
+    3-digit token like '18.3' must not match inside a larger number such as '118.35'."""
+    if sum(c.isdigit() for c in digits) < 3:
+        return False
+    return re.search(r"(?<!\d)" + re.escape(digits) + r"(?!\d)", source) is not None
+
+
 def is_number_grounded(claim: str, dossier: CompanyDossier, *, tol: float = 0.02) -> bool:
     """True if ANY unit-bearing number in `claim` ($, %, x, magnitude) matches a dossier
-    fact/metric within `tol`, or its digits appear in the ingested source text. Used to drop
-    unsupported_number findings whose figures are actually grounded in the data."""
+    fact/metric within `tol`, or is a specific (>=3 sig-digit) figure quoted verbatim in the
+    ingested source text. Used to drop unsupported_number findings that are actually grounded."""
     toks = _meaningful_numbers(claim)
     if not toks:
         return False
@@ -77,7 +87,7 @@ def is_number_grounded(claim: str, dossier: CompanyDossier, *, tol: float = 0.02
         for v in cands:
             if v != 0 and any(dv and abs(v - dv) <= tol * abs(dv) for dv in dvals):
                 return True
-        if digits and digits in source:
+        if digits and _grounded_in_source(digits, source):
             return True
     return False
 
