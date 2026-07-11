@@ -161,3 +161,9 @@ def test_synthesize_sanitizes_bad_stance():
     d["stance"] = "STRONG BUY"                     # not a valid literal -> coerced to unclear
     t = synthesize(_analysis(), _debate(), _dossier_with_quote(), _AlphaLLM(_json.dumps(d)))
     assert t.stance == "unclear"
+
+
+def test_synthesize_with_mock_client_renders():
+    from saturn.llm.mock_client import MockLLMClient
+    t = synthesize(_analysis(), _debate(), _dossier_with_quote(), MockLLMClient())
+    assert t is not None and len(t.scenarios) == 3
