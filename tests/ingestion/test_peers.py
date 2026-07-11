@@ -11,6 +11,12 @@ def test_peers_for_unmapped_industry_is_empty():
     assert peers._peers_for("Restaurants") == []
 
 
+def test_peers_for_ticker_fallback_when_industry_missing():
+    # industry not populated (identity absent) -> known semi ticker still maps to the chain
+    assert ("NVDA", "demand") in peers._peers_for(None, "MU")
+    assert peers._peers_for(None, "AAPL") == []   # not a semi ticker
+
+
 def test_fetch_industry_context_excludes_self_and_skips_failures(monkeypatch):
     # stub the per-peer summary: NVDA succeeds, AMD returns None (skipped), MU is the target
     def fake_summary(ticker, role):
