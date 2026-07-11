@@ -10,7 +10,7 @@ from typing import TypeVar
 from pydantic import ValidationError
 
 from saturn.analytics.forward import is_reverse_dcf_low_confidence
-from saturn.agents.critic import critique
+from saturn.agents.critic import _actionable, _score, critique, revise
 from saturn.llm.base import LLMClient
 from saturn.models import (
     AnalysisSections,
@@ -337,6 +337,23 @@ def run(
     analysis = analyze(company, llm, model=call_model)
     deb = debate(company, llm, model=call_model)
     review = critique(analysis, deb, company, llm, model=call_model)
+
+    # Self-repair loop: when the Critic finds actionable errors, revise the affected
+    # sections, re-verify, and keep the correction only if the severity-weighted score
+    # strictly improves. Unaffected sections are spliced verbatim (deterministic), so a
+    # revision can't quietly damage good content. Soft-fail: any failure keeps the original.
+    if review is not None and _actionable(review):
+        corrections = revise(analysis, deb, review, company, llm, model=call_model)
+        if corrections:
+            r_analysis = analysis.model_copy(
+                update={k: v for k, v in corrections.items() if k in AnalysisSections.model_fields})
+            r_deb = deb.model_copy(
+                update={k: v for k, v in corrections.items() if k in DebateSections.model_fields})
+            r_review = critique(r_analysis, r_deb, company, llm, model=call_model)
+            if r_review is not None and _score(r_review) < _score(review):
+                r_review.repaired = True
+                analysis, deb, review = r_analysis, r_deb, r_review
+
     return ResearchReport(
         ticker=company.ticker,
         company=company,

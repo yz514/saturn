@@ -26,3 +26,47 @@ def test_extract_json_strips_code_fences():
     fenced = '```json\n{"a": 1}\n```'
     assert _extract_json(fenced) == '{"a": 1}'
     assert _extract_json('{"a": 1}') == '{"a": 1}'
+
+
+# ---- Critic-v2: self-repair loop ----
+
+import json
+
+_ANALYSIS_KEYS = ["executive_summary", "company_overview", "business_segments",
+                  "financial_snapshot", "valuation_discussion", "key_risks", "open_questions"]
+
+
+class _RepairLLM:
+    """Stateful stub: analyze -> debate -> critic(1 high contradiction) -> revise -> critic(empty)."""
+    def __init__(self, improve=True):
+        self.improve = improve
+        self.critic_calls = 0
+
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        if "OUTPUT_SCHEMA=analysis" in prompt:
+            return json.dumps({k: "orig" for k in _ANALYSIS_KEYS})
+        if "OUTPUT_SCHEMA=debate" in prompt:
+            return json.dumps({"bull_thesis": "b", "bear_thesis": "orig bear", "final_view": "f"})
+        if "OUTPUT_SCHEMA=revise" in prompt:
+            return json.dumps({"bear_thesis": "corrected bear"})
+        if "OUTPUT_SCHEMA=critic" in prompt:
+            self.critic_calls += 1
+            bad = [{"claim": "x", "section": "bear_thesis", "category": "contradiction",
+                    "verdict": "contradicted", "evidence": "data shows y", "severity": "high"}]
+            if self.critic_calls == 1:
+                return json.dumps({"claims_checked": 3, "summary": "issue", "findings": bad})
+            return json.dumps({"claims_checked": 3, "summary": "ok",
+                               "findings": [] if self.improve else bad})
+        return "{}"
+
+
+def test_run_self_repair_corrects_and_flags_repaired():
+    r = run(_mock_dossier("MU"), _RepairLLM(improve=True), model_used="m", mock=False)
+    assert r.debate.bear_thesis == "corrected bear"
+    assert r.critic_review is not None and r.critic_review.repaired is True
+
+
+def test_run_self_repair_keeps_original_when_not_improved():
+    r = run(_mock_dossier("MU"), _RepairLLM(improve=False), model_used="m", mock=False)
+    assert r.debate.bear_thesis == "orig bear"                       # revision rejected
+    assert r.critic_review is None or r.critic_review.repaired is False
