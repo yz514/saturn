@@ -19,6 +19,7 @@ from saturn.ingestion.dispatch import route_to_source
 from saturn.ingestion.edgar import fetch_edgar
 from saturn.ingestion.errors import DataUnavailable
 from saturn.ingestion.fred import fetch_fred
+from saturn.ingestion.peers import fetch_industry_context
 from saturn.ingestion.prices import fetch_quote
 from saturn.models import (
     CompanyDossier,
@@ -26,10 +27,12 @@ from saturn.models import (
     FilingSection,
     FinancialFact,
     Fundamentals,
+    IndustryContext,
     MacroSeries,
     MacroSnapshot,
     MaterialEvent,
     NewsItem,
+    PeerSummary,
     Provenance,
     Quote,
 )
@@ -97,6 +100,15 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
         target_mean=1000.0, target_high=1200.0, target_low=800.0, target_upside_pct=1000.0 / 900.0 - 1,
         rating="buy", n_analysts=40, last_eps_surprise_pct=0.05,
         provenance=Provenance(source="yfinance (estimate, mock)", as_of=date.today()),
+    )
+    prov_ic = Provenance(source="SEC EDGAR (mock)")
+    dossier.industry_context = IndustryContext(
+        peers=[
+            PeerSummary(ticker="NVDA", role="demand", revenue_growth_yoy=1.22, capex=11_000_000_000.0, provenance=prov_ic),
+            PeerSummary(ticker="MSFT", role="demand", revenue_growth_yoy=0.17, capex=44_000_000_000.0, provenance=prov_ic),
+        ],
+        note="[MOCK] US-filer value-chain proxies (revenue/capex).",
+        provenance=prov_ic,
     )
     return dossier
 
@@ -180,6 +192,12 @@ def build_dossier(
         else None
     )
 
+    def _industry():
+        return fetch_industry_context(ticker, ident.get("industry"))
+    industry_ctx, gap = route_to_source("industry", _industry)
+    if gap:
+        gaps.append(gap)
+
     dossier = CompanyDossier(
         ticker=ticker,
         cik=ident.get("cik") or edgar_cik,
@@ -194,6 +212,7 @@ def build_dossier(
         material_events=material_events,
         macro=fred_result if isinstance(fred_result, MacroSnapshot) else None,
         consensus=consensus,
+        industry_context=industry_ctx if isinstance(industry_ctx, IndustryContext) else None,
         news=ident.get("news", []),
         gaps=gaps,
         generated_at=date.today(),
