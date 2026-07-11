@@ -114,10 +114,12 @@ CRITIC_SYSTEM = (
 
 
 def _alpha_text(alpha) -> str:
-    """Flatten an AlphaThesis into text the Critic can scan."""
+    """Flatten an AlphaThesis into text the Critic can scan. Omits computed fields
+    (implied_price, implied_return_pct) and self-assessed confidence — the Critic audits
+    the thesis inputs, not model-derived outputs."""
     legs = "; ".join(
         f"{s.name} {s.period}: {s.per_share_value:g} {s.metric} x {s.multiple:g} {s.multiple_basis} "
-        f"(driver: {s.driver})" for s in alpha.scenarios)
+        f"(driver: {s.driver})" for s in alpha.scenarios) or "none"
     return (f"stance={alpha.stance} vs anchor [{alpha.anchor.source}: {alpha.anchor.text}]; "
             f"variant: {alpha.variant}; rationale: {alpha.rationale}; "
             f"key_variable: {alpha.key_variable}; falsifier: {alpha.falsifier}; "
