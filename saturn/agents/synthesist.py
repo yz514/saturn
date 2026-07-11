@@ -25,6 +25,8 @@ def _resolve_anchor(dossier: CompanyDossier) -> ExpectationAnchor:
         parts: list[str] = []
         if cons.forward_pe is not None:
             parts.append(f"forward P/E {cons.forward_pe:.1f}x")
+        if cons.forward_eps is not None and cons.forward_pe is None:
+            parts.append(f"forward EPS ${cons.forward_eps:.2f}/share")
         if cons.target_mean is not None:
             up = f" ({cons.target_upside_pct:+.0%} vs price)" if cons.target_upside_pct is not None else ""
             parts.append(f"mean target ${cons.target_mean:,.0f}{up}")
@@ -42,7 +44,7 @@ def _resolve_anchor(dossier: CompanyDossier) -> ExpectationAnchor:
         low = is_reverse_dcf_low_confidence(fwd)
         note = " (LOW CONFIDENCE — trailing FCF base likely cycle-depressed)" if low else ""
         return ExpectationAnchor(source="reverse_dcf_implied", metric="implied FCF growth",
-                                 period="perpetual", value=implied.value, unit="%",
+                                 period="perpetual", value=implied.value, unit="fraction",
                                  text=f"Price implies ~{implied.value:.0%} FCF growth{note}.",
                                  confidence="low" if low else "medium")
 

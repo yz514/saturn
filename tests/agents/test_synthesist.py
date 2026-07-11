@@ -30,6 +30,7 @@ def test_resolve_anchor_falls_back_to_reverse_dcf():
                  fiscal_period="model", formula="f", provenance=Provenance(source="Saturn (model)"))])
     a = _resolve_anchor(d)
     assert a.source == "reverse_dcf_implied" and a.value == 0.14 and "14%" in a.text
+    assert a.unit == "fraction"
 
 
 def test_resolve_anchor_none_when_no_data():
@@ -45,4 +46,9 @@ def test_price_scenarios_computes_price_and_return():
 
 def test_price_scenarios_no_quote_leaves_return_none():
     legs = _price_scenarios([_leg(value=10.0, mult=15.0)], quote_price=None)
+    assert legs[0].implied_price == 150.0 and legs[0].implied_return_pct is None
+
+
+def test_price_scenarios_zero_quote_leaves_return_none():
+    legs = _price_scenarios([_leg(value=10.0, mult=15.0)], quote_price=0.0)
     assert legs[0].implied_price == 150.0 and legs[0].implied_return_pct is None
