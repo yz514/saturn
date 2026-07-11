@@ -118,6 +118,24 @@ class SourceGap(BaseModel):
     reason: str
 
 
+class PeerSummary(BaseModel):
+    """One value-chain peer's headline as-reported signals (demand/supply proxy)."""
+    ticker: str
+    role: str                       # demand | supply | peer
+    name: str | None = None
+    revenue_ttm: float | None = None
+    revenue_growth_yoy: float | None = None
+    capex: float | None = None
+    capex_intensity: float | None = None
+    provenance: Provenance
+
+
+class IndustryContext(BaseModel):
+    peers: list[PeerSummary] = Field(default_factory=list)
+    note: str = ""
+    provenance: Provenance
+
+
 class CompanyDossier(BaseModel):
     """Rich, provenance-tagged evidence envelope consumed by the agents."""
 
@@ -138,6 +156,7 @@ class CompanyDossier(BaseModel):
     news: list[NewsItem] = Field(default_factory=list)
     gaps: list[SourceGap] = Field(default_factory=list)
     generated_at: date
+    industry_context: IndustryContext | None = None
 
 
 class CompanyData(BaseModel):

@@ -212,6 +212,27 @@ def test_company_context_includes_forward_block():
     assert "Saturn model" in ctx
 
 
+def test_company_context_includes_industry_value_chain_block():
+    """A dossier with industry_context -> _company_context contains the block header and a peer ticker."""
+    from datetime import date as _date
+    from saturn.models import CompanyDossier, IndustryContext, PeerSummary, Provenance
+    from saturn.workflows.equity_research import _company_context
+
+    prov = Provenance(source="SEC EDGAR")
+    d = CompanyDossier(ticker="MU", name="Micron", generated_at=_date(2026, 7, 11))
+    d.industry_context = IndustryContext(
+        peers=[
+            PeerSummary(ticker="NVDA", role="demand", revenue_growth_yoy=1.22,
+                        capex=11_000_000_000.0, provenance=prov),
+        ],
+        note="test note",
+        provenance=prov,
+    )
+    ctx = _company_context(d)
+    assert "INDUSTRY / VALUE-CHAIN CONTEXT" in ctx
+    assert "NVDA" in ctx
+
+
 def test_company_context_includes_consensus_block():
     from datetime import date as _date
     from saturn.models import CompanyDossier, ConsensusSnapshot, Provenance

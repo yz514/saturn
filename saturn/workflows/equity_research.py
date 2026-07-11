@@ -38,7 +38,10 @@ ANALYSIS_SYSTEM = (
     "or ContractLiability (customer deposits) appear in the data, discuss them as "
     "revenue-visibility and customer-commitment signals — but note that GAAP RPO excludes "
     "non-binding long-term supply commitments (e.g. strategic customer agreements), so do "
-    "not conflate it with any larger management-disclosed commitment figure."
+    "not conflate it with any larger management-disclosed commitment figure. "
+    "Use the INDUSTRY / VALUE-CHAIN CONTEXT (peer revenue growth and hyperscaler capex) "
+    "to triangulate whether the company's demand tailwind is corroborated and durable; "
+    "treat it as a demand proxy, not unit or price data."
 )
 
 DEBATE_SYSTEM = (
@@ -170,6 +173,20 @@ def _company_context(dossier: CompanyDossier) -> str:
                 lines.append(f"- {label}: {val}")
         if cons.rejected:
             lines.append(f"- rejected (failed validation, withheld): {'; '.join(cons.rejected)}")
+
+    ic = dossier.industry_context
+    if ic and ic.peers:
+        lines.append("\nINDUSTRY / VALUE-CHAIN CONTEXT (peer as-reported proxies for demand/supply):")
+        for p in ic.peers:
+            bits = []
+            if p.revenue_growth_yoy is not None:
+                bits.append(f"rev growth {p.revenue_growth_yoy:+.0%} YoY")
+            if p.capex is not None:
+                bits.append(f"capex ${p.capex / 1e9:.1f}B")
+            if p.capex_intensity is not None:
+                bits.append(f"capex/rev {p.capex_intensity:.0%}")
+            lines.append(f"- {p.ticker} [{p.role}]: {', '.join(bits) or 'n/a'} (source: SEC EDGAR)")
+        lines.append(f"  NOTE: {ic.note}")
 
     if dossier.filing_sections:
         lines.append("\nFILING SECTIONS:")

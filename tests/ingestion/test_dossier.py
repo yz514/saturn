@@ -1,5 +1,66 @@
+from datetime import date
+
+import pytest
+
 from saturn.ingestion.dossier import _mock_dossier, build_dossier
-from saturn.models import CompanyDossier
+from saturn.models import CompanyData, CompanyDossier
+
+
+@pytest.fixture(autouse=True)
+def _stub_identity(monkeypatch):
+    """Keep build_dossier's new identity fetch offline: return an empty-name CompanyData so
+    tests that don't pass `identity=` don't hit yfinance and edgar-name precedence is preserved.
+    Tests that pass identity= explicitly skip the fetch entirely."""
+    monkeypatch.setattr(
+        "saturn.ingestion.dossier.fetch_company_data",
+        lambda t, *, mock=False: CompanyData(ticker=t, name="", as_of=date.today()),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 3 tests: industry_context wired into build_dossier + mock
+# ---------------------------------------------------------------------------
+
+def test_mock_dossier_has_industry_context():
+    """_mock_dossier must set a non-None industry_context with at least one peer."""
+    from saturn.models import IndustryContext
+    d = _mock_dossier("NVDA")
+    assert d.industry_context is not None
+    assert isinstance(d.industry_context, IndustryContext)
+    assert len(d.industry_context.peers) >= 1
+
+
+def test_build_dossier_mock_path_has_industry_context():
+    """build_dossier(mock=True) must also return a dossier with industry_context."""
+    from saturn.models import IndustryContext
+    d = build_dossier("MU", mock=True)
+    assert d.industry_context is not None
+    assert isinstance(d.industry_context, IndustryContext)
+
+
+def test_build_dossier_real_path_attaches_industry_context(monkeypatch):
+    """Real path: monkeypatched fetch_industry_context returns canned IndustryContext."""
+    from saturn.models import IndustryContext, PeerSummary, Provenance, Quote
+    import saturn.ingestion.dossier as dossier_mod
+
+    canned_ic = IndustryContext(
+        peers=[PeerSummary(ticker="NVDA", role="demand", revenue_growth_yoy=0.6,
+                           provenance=Provenance(source="SEC EDGAR"))],
+        note="test note",
+        provenance=Provenance(source="SEC EDGAR"),
+    )
+    monkeypatch.setattr(dossier_mod, "fetch_industry_context", lambda ticker, industry: canned_ic)
+
+    d = build_dossier(
+        "MU",
+        mock=False,
+        quote_fn=lambda t, *, mock: Quote(price=1.0, currency="USD", provenance=Provenance(source="yfinance")),
+        edgar_fn=None,
+        fred_fn=None,
+        identity={"industry": "Semiconductors"},
+    )
+    assert d.industry_context is not None
+    assert d.industry_context is canned_ic
 
 
 def test_mock_dossier_is_rich():
