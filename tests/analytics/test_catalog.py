@@ -10,7 +10,7 @@ CANONICAL = {
     "roe", "roa", "roic", "roce",
     "current_ratio", "quick_ratio", "cash_ratio",
     "debt_to_equity", "debt_to_assets", "net_debt", "net_debt_to_ebitda", "interest_coverage",
-    "asset_turnover", "inventory_turnover", "capex_intensity", "days_sales_outstanding",
+    "asset_turnover", "inventory_turnover", "capex_intensity", "days_sales_outstanding", "rpo_to_revenue",
     "fcf", "fcf_conversion",
     "revenue_growth_yoy", "eps_growth_yoy", "fcf_growth_yoy",
     "revenue_cagr_3y", "eps_cagr_3y", "revenue_growth_qoq",
@@ -61,6 +61,7 @@ def test_every_catalog_name_is_computable_and_vice_versa():
         "CapitalExpenditures", "AccountsReceivableNetCurrent",
         "OperatingCashFlow", "WeightedAverageSharesDiluted",
         "EarningsPerShareDiluted", "DividendsPaid", "StockRepurchased",
+        "RemainingPerformanceObligation",
     ]
     for i, p in enumerate(["FY2022", "FY2023", "FY2024", "FY2025"]):
         for c in concepts:

@@ -47,6 +47,7 @@ _Generated from `saturn/analytics/catalog.py` — do not edit by hand; run `satu
 | `inventory_turnover` | x | CostOfRevenue / Inventory | Annual periods only (period flow vs. point-in-time stock). |
 | `capex_intensity` | percent | CapitalExpenditures / Revenues |  |
 | `days_sales_outstanding` | ratio | AccountsReceivableNetCurrent / Revenues * 365 |  |
+| `rpo_to_revenue` | x | RemainingPerformanceObligation / Revenues | Annual only; GAAP RPO excludes non-binding long-term supply commitments (e.g. SCA minimums). |
 
 ## Cash
 

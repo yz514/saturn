@@ -34,7 +34,11 @@ ANALYSIS_SYSTEM = (
     "the quarter's financial highlights (operating cash flow, adjusted free cash flow), "
     "forward guidance, and any customer-agreement details — use the latest-quarter FCF "
     "and guidance in the cash-flow and valuation discussion instead of relying only on "
-    "older annual figures."
+    "older annual figures. When RemainingPerformanceObligation (contracted backlog / RPO) "
+    "or ContractLiability (customer deposits) appear in the data, discuss them as "
+    "revenue-visibility and customer-commitment signals — but note that GAAP RPO excludes "
+    "non-binding long-term supply commitments (e.g. strategic customer agreements), so do "
+    "not conflate it with any larger management-disclosed commitment figure."
 )
 
 DEBATE_SYSTEM = (

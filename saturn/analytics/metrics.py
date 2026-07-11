@@ -504,6 +504,40 @@ def _drop_stale(metrics: list[DerivedMetric], keep_years: int = 5) -> list[Deriv
     return [m for m in metrics if (y := _period_year(m.fiscal_period)) is None or y >= cutoff]
 
 
+def _period_ordinal(period: str) -> tuple[int, int]:
+    """Rank FY and Q periods on one timeline: 'FY2025'->(2025,4); 'Q3 FY2026'->(2026,3)."""
+    if (period or "").startswith("FY"):
+        try:
+            return (int(period[2:]), 4)
+        except ValueError:
+            return (-1, -1)
+    try:
+        q, fy = period.split()
+        return (int(fy[2:]), int(q[1]))
+    except (ValueError, IndexError):
+        return (-1, -1)
+
+
+def _latest_fact(idx, concept):
+    """(period, fact) for the most-recent period of `concept` across annual + quarterly."""
+    facts = [(p, f) for (c, p), f in idx.items() if c == concept]
+    return max(facts, key=lambda pf: _period_ordinal(pf[0])) if facts else None
+
+
+def _backlog(idx) -> list[DerivedMetric | None]:
+    """rpo_to_revenue: latest contracted backlog (RPO — disclosed irregularly, often only at a
+    quarter-end) over latest-FY revenue = a current revenue-visibility signal."""
+    latest = _latest_fact(idx, "RemainingPerformanceObligation")
+    fy = _annual_periods(idx)
+    if not latest or not fy:
+        return []
+    period, rpo = latest
+    rev = _fact(idx, "Revenues", fy[0])
+    if not rev or rev.value == 0:
+        return []
+    return [_make("rpo_to_revenue", _div(rpo.value, rev.value), period, [_in(rpo), _in(rev)])]
+
+
 def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> list[DerivedMetric]:
     idx = _index(fundamentals)
     out: list[DerivedMetric | None] = []
@@ -518,4 +552,5 @@ def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> l
         out += _per_share(idx, period)
         out += _quality(idx, period)
     out += _valuation(idx, quote)
+    out += _backlog(idx)
     return _drop_stale([m for m in out if m])
