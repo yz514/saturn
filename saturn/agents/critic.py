@@ -167,6 +167,70 @@ def _build_review(data: dict, dossier: CompanyDossier) -> CriticReview:
     )
 
 
+_SEVERITY_WEIGHT = {"high": 3, "medium": 2, "low": 1}
+_ACTIONABLE_CATEGORIES = {"contradiction", "unsupported_number", "over_weighting"}
+
+
+def _is_actionable_finding(f) -> bool:
+    """A finding worth a repair pass: a high/medium error the analyst can act on
+    (a wrong figure, an internal contradiction, or leading with a low-confidence signal).
+    Low-severity notes and generic unverified_claim stay advisory."""
+    return f.severity in ("high", "medium") and f.category in _ACTIONABLE_CATEGORIES
+
+
+def _actionable(review: CriticReview) -> bool:
+    return any(_is_actionable_finding(f) for f in review.findings)
+
+
+def _score(review: CriticReview) -> int:
+    """Severity-weighted issue score (high=3, medium=2, low=1); lower is better."""
+    return sum(_SEVERITY_WEIGHT.get(f.severity, 1) for f in review.findings)
+
+
+REVISE_SYSTEM = (
+    "You are correcting a draft equity research report. You are given specific VERIFIED "
+    "problems (each with the underlying data as evidence) and the current text of the "
+    "affected sections. Rewrite ONLY those sections to fix exactly these problems using the "
+    "cited evidence — correct the wrong figure/claim, or stop leading with an over-weighted "
+    "low-confidence signal. Preserve everything else in each section verbatim; add no new "
+    "claims. Respond with ONLY a JSON object mapping each affected section name to its "
+    "corrected full text (plain strings), no prose, no code fences."
+)
+
+
+def revise(analysis, debate, review: CriticReview, dossier: CompanyDossier, llm, *,
+           model: str | None = None) -> dict | None:
+    """Return {section: corrected_text} for the actionable-finding sections, or None
+    (soft-fail). Only the affected sections are rewritten; unaffected sections are never
+    returned so the caller can splice deterministically."""
+    from saturn.workflows.equity_research import _company_context, _extract_json
+    try:
+        actionable = [f for f in review.findings if _is_actionable_finding(f)]
+        sections = {**analysis.model_dump(), **debate.model_dump()}
+        affected = sorted({f.section for f in actionable if f.section in sections})
+        if not affected:
+            return None
+        problems = "\n".join(
+            f'- [{f.section}] ({f.category}, {f.severity}): "{f.claim}" -- {f.evidence}'
+            for f in actionable if f.section in affected
+        )
+        current = {s: sections[s] for s in affected}
+        prompt = (
+            "OUTPUT_SCHEMA=revise\n"
+            "VERIFIED PROBLEMS to fix:\n" + problems + "\n\n"
+            "CURRENT SECTION TEXT (JSON):\n" + json.dumps(current) + "\n\n"
+            "UNDERLYING DATA (provenance-tagged):\n" + _company_context(dossier) + "\n\n"
+            f"Return ONLY a JSON object mapping each of {affected} to its corrected full text."
+        )
+        raw = llm.complete(REVISE_SYSTEM, prompt, model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+        data = json.loads(_extract_json(raw))
+        out = {k: str(v) for k, v in data.items() if k in affected and isinstance(v, str)}
+        return out or None
+    except Exception as exc:  # noqa: BLE001 - revise is best-effort; keep the original report
+        logger.warning("critic revise unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)
+        return None
+
+
 def critique(analysis, debate, dossier: CompanyDossier, llm, *, model: str | None = None) -> CriticReview | None:
     """Advisory verification. Resilient to imperfect LLM JSON: retries once on a parse
     failure, then validates findings individually. Returns None (soft-fail) only when both

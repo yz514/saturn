@@ -184,3 +184,57 @@ class _ConfirmedNoiseLLM:
 def test_critique_drops_confirmed_noise_keeps_real_issue():
     review = critique(_analysis(), _debate(), _pct_ratio_dossier(), _ConfirmedNoiseLLM())
     assert [f.category for f in review.findings] == ["contradiction"]
+
+
+# ---- Critic-v2: self-repair helpers + revise() ----
+
+from saturn.agents.critic import _actionable, _is_actionable_finding, _score, revise
+from saturn.models import CriticFinding, CriticReview
+
+
+def _rev(findings):
+    return CriticReview(findings=findings, provenance=Provenance(source="Saturn (critic)"))
+
+
+def _find(category="contradiction", severity="high", section="bear_thesis"):
+    return CriticFinding(claim="c", section=section, category=category, verdict="v", evidence="e", severity=severity)
+
+
+def test_score_is_severity_weighted():
+    assert _score(_rev([_find(severity="high"), _find(severity="low")])) == 4  # 3 + 1
+
+
+def test_actionable_matrix():
+    assert _is_actionable_finding(_find("contradiction", "high")) is True
+    assert _is_actionable_finding(_find("over_weighting", "medium")) is True
+    assert _is_actionable_finding(_find("contradiction", "low")) is False       # low severity
+    assert _is_actionable_finding(_find("unverified_claim", "high")) is False    # non-actionable category
+    assert _actionable(_rev([_find("contradiction", "low"), _find("unsupported_number", "medium")])) is True
+    assert _actionable(_rev([_find("unverified_claim", "high")])) is False
+
+
+class _ReviseLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        assert "OUTPUT_SCHEMA=revise" in prompt
+        return '{"bear_thesis": "corrected bear thesis"}'
+
+
+class _BadReviseLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        return "not json"
+
+
+def test_revise_returns_affected_section_corrections():
+    corrections = revise(_analysis(), _debate(), _rev([_find("contradiction", "high", "bear_thesis")]),
+                         _dossier(), _ReviseLLM())
+    assert corrections == {"bear_thesis": "corrected bear thesis"}
+
+
+def test_revise_no_actionable_findings_returns_none():
+    assert revise(_analysis(), _debate(), _rev([_find("unverified_claim", "high", "bear_thesis")]),
+                  _dossier(), _ReviseLLM()) is None
+
+
+def test_revise_soft_fails_to_none():
+    assert revise(_analysis(), _debate(), _rev([_find("contradiction", "high", "bear_thesis")]),
+                  _dossier(), _BadReviseLLM()) is None

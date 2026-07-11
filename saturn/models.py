@@ -194,6 +194,7 @@ class CriticReview(BaseModel):
     findings: list[CriticFinding] = Field(default_factory=list)
     claims_checked: int = 0
     summary: str = ""
+    repaired: bool = False   # True when the self-repair loop corrected the draft
     provenance: Provenance
 
 
