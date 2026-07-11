@@ -143,7 +143,7 @@ def _render_catalysts_from_events(events: list) -> list[str]:
 
 def _render_alpha(thesis) -> list[str]:
     suffix = " (Incomplete — low confidence)" if thesis.incompleteness else ""
-    out: list[str] = [f"## 2. Alpha Thesis{suffix}", ""]
+    out: list[str] = [f"## 2. Alpha Thesis{suffix}", ""]  # §2 — also update render() else-branch if order changes
     a = thesis.anchor
     out.append(f"**Anchor** ({a.source}): {a.text}")
     out.append("")
@@ -164,7 +164,8 @@ def _render_alpha(thesis) -> list[str]:
             math = f"{s.per_share_value:g} {s.metric} × {s.multiple:g} {s.multiple_basis}"
             price = f"${s.implied_price:,.2f}" if s.implied_price is not None else "N/A"
             ret = f"{s.implied_return_pct:+.0%}" if s.implied_return_pct is not None else "N/A"
-            out.append(f"| {s.name} | {s.period} | {s.driver} | {math} | {price} | {ret} |")
+            driver = s.driver.replace("|", "\\|")   # free-text; keep it inside one table cell
+            out.append(f"| {s.name} | {s.period} | {driver} | {math} | {price} | {ret} |")
         out.append("")
     if thesis.incompleteness:
         out += [f"_Alpha thesis incomplete: {', '.join(thesis.incompleteness)}._", ""]

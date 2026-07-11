@@ -381,3 +381,15 @@ def test_render_alpha_unavailable():
     report = _sample_report()
     report.alpha_thesis = None
     assert "_Alpha thesis unavailable this run._" in render(report)
+
+
+def test_render_alpha_escapes_pipe_in_driver():
+    from saturn.models import ScenarioLeg
+    report = _sample_report()
+    thesis = _alpha_thesis()
+    thesis.scenarios = [ScenarioLeg(name="base", period="FY2027", driver="beat | re-rate",
+        metric="EPS", metric_basis="adjusted", per_share_value=10.0, multiple=15.0,
+        multiple_basis="P/E", implied_price=150.0, implied_return_pct=0.5)]
+    report.alpha_thesis = thesis
+    md = render(report)
+    assert "beat \\| re-rate" in md
