@@ -20,7 +20,7 @@ from saturn.ingestion.edgar import fetch_edgar
 from saturn.ingestion.errors import DataUnavailable
 from saturn.ingestion.fred import fetch_fred
 from saturn.ingestion.peers import fetch_industry_context
-from saturn.ingestion.prices import fetch_quote
+from saturn.ingestion.prices import fetch_company_data, fetch_quote
 from saturn.models import (
     CompanyDossier,
     ConsensusSnapshot,
@@ -121,6 +121,7 @@ def build_dossier(
     edgar_fn: Callable[..., object] | None = fetch_edgar,
     fred_fn: Callable[..., object] | None = fetch_fred,
     identity: dict | None = None,
+    identity_fn: Callable[..., object] | None = None,
 ) -> CompanyDossier:
     """Build a CompanyDossier. mock=True returns the offline fixture.
 
@@ -141,6 +142,23 @@ def build_dossier(
 
     ident = identity or {}
     gaps = []
+
+    # Populate identity (sector/industry/business_summary/segments/news) from yfinance when
+    # not supplied — the CLI calls build_dossier(ticker) with no identity, so without this
+    # the dossier's industry/sector/etc. are all None in real runs.
+    if identity is None:
+        fn = identity_fn or fetch_company_data   # module global, so it's monkeypatchable
+        def _identity():
+            cd = fn(ticker, mock=False)
+            return {
+                "name": cd.name, "sector": cd.sector, "industry": cd.industry,
+                "business_summary": cd.business_summary, "segments": cd.segments, "news": cd.news,
+            }
+        id_result, gap = route_to_source("identity", _identity)
+        if gap:
+            gaps.append(gap)
+        if isinstance(id_result, dict):
+            ident = id_result
 
     quote, gap = route_to_source("quote", lambda: quote_fn(ticker, mock=False))
     if gap:

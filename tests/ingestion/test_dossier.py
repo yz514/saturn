@@ -1,5 +1,20 @@
+from datetime import date
+
+import pytest
+
 from saturn.ingestion.dossier import _mock_dossier, build_dossier
-from saturn.models import CompanyDossier
+from saturn.models import CompanyData, CompanyDossier
+
+
+@pytest.fixture(autouse=True)
+def _stub_identity(monkeypatch):
+    """Keep build_dossier's new identity fetch offline: return an empty-name CompanyData so
+    tests that don't pass `identity=` don't hit yfinance and edgar-name precedence is preserved.
+    Tests that pass identity= explicitly skip the fetch entirely."""
+    monkeypatch.setattr(
+        "saturn.ingestion.dossier.fetch_company_data",
+        lambda t, *, mock=False: CompanyData(ticker=t, name="", as_of=date.today()),
+    )
 
 
 # ---------------------------------------------------------------------------
