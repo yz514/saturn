@@ -60,3 +60,29 @@ def _price_scenarios(legs: list[ScenarioLeg], quote_price: float | None) -> list
         ret = (price / quote_price - 1) if (quote_price and quote_price > 0) else None
         out.append(leg.model_copy(update={"implied_price": price, "implied_return_pct": ret}))
     return out
+
+
+def alpha_completeness(thesis: AlphaThesis) -> list[str]:
+    """Structural-presence gaps only (semantic quality is the Critic's job). Returns
+    human-readable gap strings; empty list means structurally complete."""
+    gaps: list[str] = []
+    if thesis.anchor.source == "none":
+        gaps.append("no market-expectation anchor")
+    if thesis.stance != "unclear" and not thesis.rationale.strip():
+        gaps.append("stance without rationale")
+    if not thesis.variant.strip():
+        gaps.append("missing variant")
+    elif len(thesis.variant.split()) > 50:
+        gaps.append("variant too long (>50 words)")
+    if not thesis.key_variable.strip():
+        gaps.append("missing key variable")
+    if not thesis.falsifier.strip():
+        gaps.append("missing falsifier")
+    if not thesis.horizon.strip():
+        gaps.append("missing horizon")
+    if len(thesis.scenarios) < 3:
+        gaps.append("fewer than 3 scenarios")
+    for s in thesis.scenarios:
+        if not s.period.strip():
+            gaps.append(f"scenario '{s.name}' missing period")
+    return gaps

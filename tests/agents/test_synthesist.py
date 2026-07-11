@@ -1,9 +1,10 @@
 # tests/agents/test_synthesist.py
 from datetime import date
 
-from saturn.agents.synthesist import _resolve_anchor, _price_scenarios
+from saturn.agents.synthesist import _resolve_anchor, _price_scenarios, alpha_completeness
 from saturn.models import (
-    CompanyDossier, ConsensusSnapshot, DerivedMetric, Provenance, Quote, ScenarioLeg,
+    AlphaThesis, CompanyDossier, ConsensusSnapshot, DerivedMetric, ExpectationAnchor,
+    Provenance, Quote, ScenarioLeg,
 )
 
 
@@ -52,3 +53,29 @@ def test_price_scenarios_no_quote_leaves_return_none():
 def test_price_scenarios_zero_quote_leaves_return_none():
     legs = _price_scenarios([_leg(value=10.0, mult=15.0)], quote_price=0.0)
     assert legs[0].implied_price == 150.0 and legs[0].implied_return_pct is None
+
+
+def _complete_thesis(**kw):
+    base = dict(
+        anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
+        stance="above_expectations", variant="Market underrates HBM margin durability.",
+        rationale="r", confidence="medium", key_variable="HBM gross margin",
+        falsifier="GM below 60% next 2 quarters", horizon="12-18 months",
+        scenarios=[_leg("bull"), _leg("base"), _leg("bear")],
+        provenance=Provenance(source="Saturn (synthesist)"))
+    base.update(kw)
+    return AlphaThesis(**base)
+
+
+def test_completeness_complete_thesis_has_no_gaps():
+    assert alpha_completeness(_complete_thesis()) == []
+
+
+def test_completeness_flags_missing_pieces():
+    gaps = alpha_completeness(_complete_thesis(falsifier="", scenarios=[_leg("bull"), _leg("base")]))
+    assert any("falsifier" in g for g in gaps) and any("3 scenarios" in g for g in gaps)
+
+
+def test_completeness_flags_none_anchor():
+    t = _complete_thesis(anchor=ExpectationAnchor(source="none", text="x", confidence="low"))
+    assert any("anchor" in g for g in alpha_completeness(t))
