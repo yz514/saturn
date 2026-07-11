@@ -167,3 +167,18 @@ def test_synthesize_with_mock_client_renders():
     from saturn.llm.mock_client import MockLLMClient
     t = synthesize(_analysis(), _debate(), _dossier_with_quote(), MockLLMClient())
     assert t is not None and len(t.scenarios) == 3
+
+
+def test_synthesize_reverse_dcf_anchor_end_to_end():
+    # No consensus -> anchor should fall back to the reverse-DCF implied-growth model,
+    # and still produce a fully priced thesis through the whole synthesize() path.
+    d = _dossier(
+        quote=Quote(price=100.0, provenance=Provenance(source="yfinance")),
+        derived_metrics=[DerivedMetric(name="implied_fcf_growth", value=0.14, format="percent",
+            fiscal_period="model", formula="f", provenance=Provenance(source="Saturn (model)"))])
+    t = synthesize(_analysis(), _debate(), d, _AlphaLLM(_valid_alpha_json()))
+    assert t is not None
+    assert t.anchor.source == "reverse_dcf_implied" and t.anchor.unit == "fraction"
+    assert len(t.scenarios) == 3
+    base = next(s for s in t.scenarios if s.name == "base")
+    assert base.implied_price == 150.0    # 10 x 15 from the shared valid-alpha payload
