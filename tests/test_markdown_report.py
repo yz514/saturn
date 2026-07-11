@@ -63,22 +63,23 @@ def test_render_has_all_sections():
     md = render(_sample_report())
     expected = [
         "## 1. Executive Summary",
-        "## 2. Company Overview",
-        "## 3. Business Segments",
-        "## 4. Recent Market Performance",
-        "## 5. Financial Snapshot",
-        "## 6. Key Metrics",
-        "## 7. Recent News and Catalysts",
-        "## 8. Bull Thesis",
-        "## 9. Bear Thesis",
-        "## 10. Key Risks",
-        "## 11. Valuation Discussion",
-        "## 12. Open Questions",
-        "## 13. Final View",
-        "## 14. Verification (Critic)",
-        "## 15. Macro Snapshot",
-        "## 16. Material Events (SEC 8-K)",
-        "## 17. Sources",
+        "## 2. Alpha Thesis",
+        "## 3. Company Overview",
+        "## 4. Business Segments",
+        "## 5. Recent Market Performance",
+        "## 6. Financial Snapshot",
+        "## 7. Key Metrics",
+        "## 8. Recent News and Catalysts",
+        "## 9. Bull Thesis",
+        "## 10. Bear Thesis",
+        "## 11. Key Risks",
+        "## 12. Valuation Discussion",
+        "## 13. Open Questions",
+        "## 14. Final View",
+        "## 15. Verification (Critic)",
+        "## 16. Macro Snapshot",
+        "## 17. Material Events (SEC 8-K)",
+        "## 18. Sources",
     ]
     for header in expected:
         assert header in md, f"missing: {header}"
@@ -97,7 +98,7 @@ def test_render_key_metrics_section():
                       inputs=[], provenance=Provenance(source="Saturn (derived)")),
     ]
     md = render(report)
-    assert "## 6. Key Metrics" in md
+    assert "## 7. Key Metrics" in md
     assert "net_margin" in md and "25.0%" in md          # percent formatting
     assert "20.0x" in md                                 # multiple formatting
     assert "docs/metrics.md" in md                       # methodology link
@@ -128,7 +129,7 @@ def test_render_shows_data_gaps_section():
     report = _sample_report()
     report.company.gaps = [SourceGap(source="edgar", reason="edgar adapter not configured")]
     md = render(report)
-    assert "## 18. Data Gaps" in md
+    assert "## 19. Data Gaps" in md
     assert "**edgar**: edgar adapter not configured" in md
 
 
@@ -188,13 +189,13 @@ def test_render_groups_financials_and_shows_events():
     md = render(_sample_report())  # uses _mock_dossier, has a quarterly fact + event
     assert "Q2 FY2025" in md                                   # quarterly row present
     assert md.index("FY2024") < md.index("Q2 FY2025")  # annual grouped before quarterly
-    assert "## 16. Material Events (SEC 8-K)" in md            # renumbered
+    assert "## 17. Material Events (SEC 8-K)" in md            # renumbered
     assert "Results of Operations and Financial Condition" in md
-    assert "## 17. Sources" in md                              # renumbered
+    assert "## 18. Sources" in md                              # renumbered
 
 
 def _section7(md: str) -> str:
-    return md.split("## 7. Recent News and Catalysts")[1].split("## 8.")[0]
+    return md.split("## 8. Recent News and Catalysts")[1].split("## 9.")[0]
 
 
 def test_recent_news_falls_back_to_material_events_when_news_empty():
@@ -344,3 +345,39 @@ def test_render_verification_repaired_note():
     report.critic_review = CriticReview(findings=[], claims_checked=5, summary="ok",
                                         repaired=True, provenance=Provenance(source="Saturn (critic)"))
     assert "Auto-corrected" in render(report)
+
+
+def _alpha_thesis(incomplete=False):
+    from saturn.models import AlphaThesis, ExpectationAnchor, ScenarioLeg, Provenance
+    return AlphaThesis(
+        anchor=ExpectationAnchor(source="consensus", text="forward P/E 6.5x", confidence="medium"),
+        stance="above_expectations", variant="Market underrates HBM margin durability.",
+        rationale="SCAs lock demand.", confidence="medium", key_variable="HBM gross margin",
+        falsifier="GM below 60% within 2 quarters", horizon="12-18 months",
+        scenarios=[ScenarioLeg(name="base", period="FY2027", driver="normalizing", metric="EPS",
+                   metric_basis="adjusted", per_share_value=10.0, multiple=15.0, multiple_basis="P/E",
+                   implied_price=150.0, implied_return_pct=0.5)],
+        incompleteness=(["missing falsifier"] if incomplete else []),
+        provenance=Provenance(source="Saturn (synthesist)"))
+
+
+def test_render_alpha_thesis_section():
+    report = _sample_report()
+    report.alpha_thesis = _alpha_thesis()
+    md = render(report)
+    assert "## 2. Alpha Thesis" in md
+    assert "Market underrates HBM margin durability." in md
+    assert "| Scenario | Period | Driver | Math | Price | Return |" in md
+    assert "$150.00" in md and "GM below 60% within 2 quarters" in md
+
+
+def test_render_alpha_incomplete_label():
+    report = _sample_report()
+    report.alpha_thesis = _alpha_thesis(incomplete=True)
+    assert "## 2. Alpha Thesis (Incomplete — low confidence)" in render(report)
+
+
+def test_render_alpha_unavailable():
+    report = _sample_report()
+    report.alpha_thesis = None
+    assert "_Alpha thesis unavailable this run._" in render(report)
