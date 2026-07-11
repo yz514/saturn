@@ -326,6 +326,12 @@ def test_long_term_debt_alias_registered():
     assert "LongTermDebtAndCapitalLeaseObligations" in EDGAR_CONCEPTS["LongTermDebt"]["tags"]
 
 
+def test_backlog_contract_concepts_registered():
+    from saturn.ingestion.edgar import EDGAR_CONCEPTS
+    assert EDGAR_CONCEPTS["RemainingPerformanceObligation"]["tags"] == ["RevenueRemainingPerformanceObligation"]
+    assert EDGAR_CONCEPTS["ContractLiability"]["tags"] == ["ContractWithCustomerLiability"]
+
+
 def test_fetch_edgar_includes_quarterly_mdna_and_events(monkeypatch):
     from datetime import date as _date
 

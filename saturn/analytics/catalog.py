@@ -50,6 +50,7 @@ _DEFS: list[MetricDef] = [
     _d("inventory_turnover", "Efficiency", "x", "CostOfRevenue / Inventory", "Cost of revenue vs inventory.", "Annual periods only (period flow vs. point-in-time stock)."),
     _d("capex_intensity", "Efficiency", "percent", "CapitalExpenditures / Revenues", "Capital spending as a share of revenue."),
     _d("days_sales_outstanding", "Efficiency", "ratio", "AccountsReceivableNetCurrent / Revenues * 365", "Average collection period (days), annual only."),
+    _d("rpo_to_revenue", "Efficiency", "x", "RemainingPerformanceObligation / Revenues", "Contracted backlog (RPO) as a multiple of annual revenue — revenue visibility.", "Annual only; GAAP RPO excludes non-binding long-term supply commitments (e.g. SCA minimums)."),
     # Cash
     _d("fcf", "Cash", "currency", "OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments", "Free cash flow."),
     _d("fcf_conversion", "Cash", "percent", "(OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / NetIncomeLoss", "How much net income converts to FCF (earnings quality)."),

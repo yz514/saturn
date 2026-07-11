@@ -67,6 +67,9 @@ EDGAR_CONCEPTS: dict[str, dict] = {
     "DepreciationAndAmortization": {"unit": "USD", "tags": ["DepreciationDepletionAndAmortization", "DepreciationAmortizationAndAccretionNet"]},
     "DividendsPaid": {"unit": "USD", "tags": ["PaymentsOfDividendsCommonStock", "PaymentsOfDividends"]},
     "StockRepurchased": {"unit": "USD", "tags": ["PaymentsForRepurchaseOfCommonStock"]},
+    # Backlog / contracts (USD) — instant; SCA-adjacent revenue-visibility signals
+    "RemainingPerformanceObligation": {"unit": "USD", "tags": ["RevenueRemainingPerformanceObligation"]},
+    "ContractLiability": {"unit": "USD", "tags": ["ContractWithCustomerLiability"]},
 }
 
 _COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"

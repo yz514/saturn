@@ -260,6 +260,17 @@ def test_flow_over_stock_ratios_are_annual_only():
     assert _by_name(ms, "net_margin", "Q2 FY2025") is not None
 
 
+def test_rpo_to_revenue_annual_only():
+    rows = [
+        ("RemainingPerformanceObligation", "FY2025", 5.0), ("RemainingPerformanceObligation", "Q2 FY2025", 5.0),
+        ("Revenues", "FY2025", 40.0), ("Revenues", "Q2 FY2025", 10.0),
+    ]
+    ms = compute_metrics(_facts(rows), None)
+    rpo = _by_name(ms, "rpo_to_revenue", "FY2025")
+    assert rpo is not None and abs(rpo.value - 0.125) < 1e-9   # 5 / 40
+    assert _by_name(ms, "rpo_to_revenue", "Q2 FY2025") is None  # annual-only (instant RPO / annual rev)
+
+
 def test_per_share_growth_skipped_on_split_like_share_change():
     rows = [
         ("EarningsPerShareDiluted", "FY2025", 5.0), ("EarningsPerShareDiluted", "FY2024", 30.0),

@@ -233,6 +233,8 @@ def _efficiency(idx, period) -> list[DerivedMetric | None]:
         rev = _fact(idx, "Revenues", period)
         if ar and rev and rev.value != 0:
             out.append(_make("days_sales_outstanding", ar.value / rev.value * 365, period, [_in(ar), _in(rev)]))
+        # RPO (point-in-time backlog) over annual revenue -> revenue-visibility, annual only.
+        out.append(_ratio(idx, period, "rpo_to_revenue", "RemainingPerformanceObligation", "Revenues"))
     return out
 
 
