@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -136,6 +137,48 @@ class IndustryContext(BaseModel):
     provenance: Provenance
 
 
+class ExpectationAnchor(BaseModel):
+    """What the market is pricing in — the base the variant view is measured against."""
+    source: Literal["consensus", "reverse_dcf_implied", "none"]
+    metric: str | None = None
+    period: str | None = None
+    value: float | None = None
+    unit: str | None = None
+    text: str
+    confidence: Literal["high", "medium", "low"]
+
+
+class ScenarioLeg(BaseModel):
+    """One bull/base/bear leg. The LLM supplies the assumption; code computes the price."""
+    name: Literal["bull", "base", "bear"]
+    period: str
+    driver: str
+    metric: Literal["EPS", "FCF/share", "sales/share"]
+    metric_basis: Literal["GAAP", "non_GAAP", "adjusted", "cycle_normalized"]
+    per_share_value: float
+    multiple: float
+    multiple_basis: Literal["P/E", "P/FCF", "P/S"]
+    implied_price: float | None = None
+    implied_return_pct: float | None = None
+
+
+class AlphaThesis(BaseModel):
+    """A tradeable variant view: anchor, stance, falsifier, and priced scenarios.
+    LLM-supplied fields default so a partial LLM response still validates; the
+    completeness gate flags the gaps."""
+    anchor: ExpectationAnchor
+    stance: Literal["above_expectations", "in_line", "below_expectations", "unclear"] = "unclear"
+    variant: str = ""
+    rationale: str = ""
+    confidence: Literal["high", "medium", "low"] = "low"
+    key_variable: str = ""
+    falsifier: str = ""
+    horizon: str = ""
+    scenarios: list[ScenarioLeg] = Field(default_factory=list)
+    incompleteness: list[str] = Field(default_factory=list)
+    provenance: Provenance
+
+
 class CompanyDossier(BaseModel):
     """Rich, provenance-tagged evidence envelope consumed by the agents."""
 
@@ -229,3 +272,4 @@ class ResearchReport(BaseModel):
     mock: bool
     sources: list[str] = Field(default_factory=list)
     critic_review: CriticReview | None = None
+    alpha_thesis: AlphaThesis | None = None
