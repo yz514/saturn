@@ -308,6 +308,30 @@ def test_render_verification_section():
     assert "Verification (Critic)" in md and "contradiction" in md and "Cloud fastest-growing" in md
 
 
+def test_render_value_chain_subsection_present_when_industry_context():
+    """render() includes ### Value-Chain / Demand Context and peer ticker when industry_context set."""
+    from saturn.models import IndustryContext, PeerSummary, Provenance
+    report = _sample_report()
+    prov = Provenance(source="SEC EDGAR")
+    report.company.industry_context = IndustryContext(
+        peers=[PeerSummary(ticker="NVDA", role="demand", revenue_growth_yoy=1.22,
+                           capex=11_000_000_000.0, provenance=prov)],
+        note="test note",
+        provenance=prov,
+    )
+    md = render(report)
+    assert "### Value-Chain / Demand Context" in md
+    assert "NVDA" in md
+
+
+def test_render_value_chain_subsection_absent_without_industry_context():
+    """render() does NOT include Value-Chain subsection when industry_context is None."""
+    report = _sample_report()
+    report.company.industry_context = None
+    md = render(report)
+    assert "Value-Chain / Demand Context" not in md
+
+
 def test_render_verification_absent():
     report = _sample_report()
     report.critic_review = None

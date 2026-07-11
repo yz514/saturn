@@ -161,6 +161,18 @@ def render(report: ResearchReport) -> str:
     out += ["## 2. Company Overview", "", a.company_overview, ""]
     out += ["## 3. Business Segments", "", a.business_segments, ""]
 
+    ic = c.industry_context
+    if ic and ic.peers:
+        out += ["### Value-Chain / Demand Context", ""]
+        out.append("| Peer | Role | Rev growth YoY | CapEx | CapEx/Rev |")
+        out.append("| --- | --- | --- | --- | --- |")
+        for p in ic.peers:
+            rg = f"{p.revenue_growth_yoy:+.1%}" if p.revenue_growth_yoy is not None else "N/A"
+            cx = f"${p.capex / 1e9:.1f}B" if p.capex is not None else "N/A"
+            ci = f"{p.capex_intensity:.1%}" if p.capex_intensity is not None else "N/A"
+            out.append(f"| {p.ticker} | {p.role} | {rg} | {cx} | {ci} |")
+        out += ["", f"_{ic.note}_", ""]
+
     out += ["## 4. Recent Market Performance", ""]
     if c.quote:
         out.append(f"- Price: {_fmt_money(c.quote.price)} {c.quote.currency or ''}".rstrip())
