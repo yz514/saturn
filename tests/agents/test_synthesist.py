@@ -152,6 +152,7 @@ def test_synthesize_drops_bad_leg_keeps_rest():
     bad = _json.loads(_valid_alpha_json())
     bad["scenarios"][0]["metric"] = "revenue"     # invalid literal -> that leg dropped
     t = synthesize(_analysis(), _debate(), _dossier_with_quote(), _AlphaLLM(_json.dumps(bad)))
+    assert t is not None
     assert len(t.scenarios) == 2 and any("3 scenarios" in g for g in t.incompleteness)
 
 

@@ -125,6 +125,8 @@ def _one_of(value, allowed: tuple[str, ...], default: str) -> str:
 
 
 def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier) -> AlphaThesis:
+    """Construct an AlphaThesis from parsed LLM data: validate scenarios per-leg (drop a
+    single bad leg, keep the rest), price them, sanitize enum fields, and run the gate."""
     legs: list[ScenarioLeg] = []
     for raw in (data.get("scenarios") or []):
         try:
@@ -135,7 +137,11 @@ def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier
     legs = _price_scenarios(legs, quote_price)
     thesis = AlphaThesis(
         anchor=anchor,
-        stance=_one_of(data.get("stance"), ("above_expectations", "in_line", "below_expectations", "unclear"), "unclear"),
+        stance=_one_of(
+            data.get("stance"),
+            ("above_expectations", "in_line", "below_expectations", "unclear"),
+            "unclear",
+        ),
         variant=str(data.get("variant") or ""),
         rationale=str(data.get("rationale") or ""),
         confidence=_one_of(data.get("confidence"), ("high", "medium", "low"), "low"),
