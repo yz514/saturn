@@ -260,15 +260,16 @@ def test_flow_over_stock_ratios_are_annual_only():
     assert _by_name(ms, "net_margin", "Q2 FY2025") is not None
 
 
-def test_rpo_to_revenue_annual_only():
+def test_rpo_to_revenue_uses_latest_rpo_over_latest_fy_revenue():
+    # RPO disclosed only at a quarter-end (no recent FY RPO, like MU) -> still computes, at that
+    # quarter, over latest-FY revenue = a current revenue-visibility signal.
     rows = [
-        ("RemainingPerformanceObligation", "FY2025", 5.0), ("RemainingPerformanceObligation", "Q2 FY2025", 5.0),
-        ("Revenues", "FY2025", 40.0), ("Revenues", "Q2 FY2025", 10.0),
+        ("RemainingPerformanceObligation", "Q3 FY2026", 5.0),
+        ("Revenues", "FY2025", 40.0), ("Revenues", "FY2024", 30.0),
     ]
     ms = compute_metrics(_facts(rows), None)
-    rpo = _by_name(ms, "rpo_to_revenue", "FY2025")
-    assert rpo is not None and abs(rpo.value - 0.125) < 1e-9   # 5 / 40
-    assert _by_name(ms, "rpo_to_revenue", "Q2 FY2025") is None  # annual-only (instant RPO / annual rev)
+    rpo = _by_name(ms, "rpo_to_revenue", "Q3 FY2026")
+    assert rpo is not None and abs(rpo.value - 0.125) < 1e-9   # 5 / 40 (latest FY revenue)
 
 
 def test_per_share_growth_skipped_on_split_like_share_change():
