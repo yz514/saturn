@@ -79,3 +79,16 @@ def test_completeness_flags_missing_pieces():
 def test_completeness_flags_none_anchor():
     t = _complete_thesis(anchor=ExpectationAnchor(source="none", text="x", confidence="low"))
     assert any("anchor" in g for g in alpha_completeness(t))
+
+
+def test_completeness_flags_variant_too_long():
+    long_variant = " ".join(["word"] * 60)
+    gaps = alpha_completeness(_complete_thesis(variant=long_variant))
+    assert any("too long" in g for g in gaps)
+
+
+def test_completeness_flags_scenario_missing_period():
+    bad = _leg("bull")
+    bad.period = ""     # blank period on one leg
+    gaps = alpha_completeness(_complete_thesis(scenarios=[bad, _leg("base"), _leg("bear")]))
+    assert any("missing period" in g and "bull" in g for g in gaps)
