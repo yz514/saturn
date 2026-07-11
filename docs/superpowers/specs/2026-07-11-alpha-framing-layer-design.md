@@ -88,7 +88,8 @@ Deterministic resolver, preference order:
 1. **`dossier.consensus`** present with a usable field (forward_pe / forward_eps / target_mean)
    → `source="consensus"`; populate metric/period/value/unit from the strongest available
    field; `text` summarises forward P/E, mean target + upside, rating, n_analysts;
-   `confidence` from data richness (e.g. `medium` default, `low` if most fields rejected).
+   `confidence` from data richness. **As built:** `medium` default, `low` if *any* consensus
+   field was rejected by validation (more conservative than the original "most fields" wording).
 2. else **reverse-DCF implied growth** from the forward model
    (`derived_metrics` with source `"Saturn (model)"`, `implied_fcf_growth`) →
    `source="reverse_dcf_implied"`; `text` = "price implies ~G% FCF growth"; if
@@ -133,9 +134,14 @@ of human-readable gaps; the synthesist stores it in `thesis.incompleteness`. Fla
 - `key_variable`, `falsifier`, or `horizon` blank;
 - fewer than 3 scenarios, or any scenario missing `period` / `per_share_value` / `multiple`.
 
-When non-empty, the rendered section is labelled **Incomplete — low confidence** (§9) and a
-Critic finding `alpha_incomplete` (severity medium) is added, so an incomplete thesis can never
-render as if complete.
+When non-empty, the rendered section is labelled **Incomplete — low confidence** (§9), so an
+incomplete thesis can never render as if complete.
+
+> **As built:** the incompleteness signal is surfaced via the render label + the trailing
+> `incompleteness` note only. The originally-specced separate `alpha_incomplete` Critic finding
+> was **consolidated into the render label** — the deterministic gate output is a synthesist
+> artifact and injecting it into `CriticReview` would couple the gate into the Critic's review
+> object for no user-facing gain (the label already guarantees the thesis can't look complete).
 
 ## 8. Critic integration (L4 / L5)
 
