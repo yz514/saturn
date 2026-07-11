@@ -126,7 +126,7 @@ def _select_report_facts(facts: list) -> tuple[list, list[tuple[str, str]]]:
 
 def _render_catalysts_from_events(events: list) -> list[str]:
     """Compact catalyst lines from recent 8-K material events, used for §7 when no
-    third-party news feed is available. Full excerpts stay in §15 (no duplication)."""
+    third-party news feed is available. Full excerpts stay in §16 (no duplication)."""
     lines: list[str] = []
     for ev in sorted(events, key=lambda e: e.filing_date, reverse=True)[:_RPT_MAX_CATALYSTS]:
         head = f"- **{ev.filing_date}** — {ev.title or ev.form}"
@@ -291,7 +291,20 @@ def render(report: ResearchReport) -> str:
     out += ["## 12. Open Questions", "", a.open_questions, ""]
     out += ["## 13. Final View", "", d.final_view, ""]
 
-    out += ["## 14. Macro Snapshot", ""]
+    out += ["## 14. Verification (Critic)", ""]
+    cr = report.critic_review
+    if cr is None:
+        out.append("_Verification unavailable._")
+    elif not cr.findings:
+        out.append(f"_No material discrepancies found against the underlying data ({cr.claims_checked} claims checked)._")
+    else:
+        out.append(f"{cr.summary} ({cr.claims_checked} claims checked)")
+        out.append("")
+        for f in cr.findings:
+            out.append(f"- ⚠️ **{f.category}** [{f.section}, {f.severity}]: \"{f.claim}\" — {f.evidence}")
+    out.append("")
+
+    out += ["## 15. Macro Snapshot", ""]
     if c.macro and c.macro.series:
         out.append("| Series | Latest | As of | Source |")
         out.append("| --- | --- | --- | --- |")
@@ -305,7 +318,7 @@ def render(report: ResearchReport) -> str:
         out.append("_No macro data available._")
         out.append("")
 
-    out += ["## 15. Material Events (SEC 8-K)", ""]
+    out += ["## 16. Material Events (SEC 8-K)", ""]
     if c.material_events:
         for ev in c.material_events:
             labels = ", ".join(ev.item_codes)
@@ -325,7 +338,7 @@ def render(report: ResearchReport) -> str:
         out.append("_No material events in the last 12 months._")
         out.append("")
 
-    out += ["## 16. Sources", ""]
+    out += ["## 17. Sources", ""]
     if report.sources:
         out += [f"- {s}" for s in report.sources]
     else:
@@ -333,7 +346,7 @@ def render(report: ResearchReport) -> str:
     out.append("")
 
     if c.gaps:
-        out += ["## 17. Data Gaps", ""]
+        out += ["## 18. Data Gaps", ""]
         out += [f"- **{g.source}**: {g.reason}" for g in c.gaps]
         out.append("")
 

@@ -123,3 +123,15 @@ def test_consensus_snapshot_model():
     assert d.consensus is None
     d.consensus = c
     assert d.consensus.rating == "buy"
+
+
+def test_critic_review_model():
+    from saturn.models import CriticFinding, CriticReview, Provenance
+    r = CriticReview(
+        findings=[CriticFinding(claim="Cloud is fastest-growing", section="business_segments",
+                                category="contradiction", verdict="contradicted",
+                                evidence="table shows Core DC +653% > Cloud +307%", severity="high")],
+        claims_checked=12, summary="1 contradiction found.",
+        provenance=Provenance(source="Saturn (critic)"))
+    assert r.findings[0].category == "contradiction" and r.claims_checked == 12
+    assert CriticReview(provenance=Provenance(source="Saturn (critic)")).findings == []

@@ -75,9 +75,10 @@ def test_render_has_all_sections():
         "## 11. Valuation Discussion",
         "## 12. Open Questions",
         "## 13. Final View",
-        "## 14. Macro Snapshot",
-        "## 15. Material Events (SEC 8-K)",
-        "## 16. Sources",
+        "## 14. Verification (Critic)",
+        "## 15. Macro Snapshot",
+        "## 16. Material Events (SEC 8-K)",
+        "## 17. Sources",
     ]
     for header in expected:
         assert header in md, f"missing: {header}"
@@ -127,7 +128,7 @@ def test_render_shows_data_gaps_section():
     report = _sample_report()
     report.company.gaps = [SourceGap(source="edgar", reason="edgar adapter not configured")]
     md = render(report)
-    assert "## 17. Data Gaps" in md
+    assert "## 18. Data Gaps" in md
     assert "**edgar**: edgar adapter not configured" in md
 
 
@@ -187,9 +188,9 @@ def test_render_groups_financials_and_shows_events():
     md = render(_sample_report())  # uses _mock_dossier, has a quarterly fact + event
     assert "Q2 FY2025" in md                                   # quarterly row present
     assert md.index("FY2024") < md.index("Q2 FY2025")  # annual grouped before quarterly
-    assert "## 15. Material Events (SEC 8-K)" in md            # renumbered
+    assert "## 16. Material Events (SEC 8-K)" in md            # renumbered
     assert "Results of Operations and Financial Condition" in md
-    assert "## 16. Sources" in md                              # renumbered
+    assert "## 17. Sources" in md                              # renumbered
 
 
 def _section7(md: str) -> str:
@@ -294,3 +295,20 @@ def test_render_consensus_all_rejected_still_shows_reasons():
     assert "all were rejected" in md
     assert "forward_eps" in md
     assert "_No analyst consensus available._" not in md
+
+
+def test_render_verification_section():
+    from saturn.models import CriticReview, CriticFinding, Provenance
+    report = _sample_report()
+    report.critic_review = CriticReview(
+        findings=[CriticFinding(claim="Cloud fastest-growing", section="business_segments",
+                  category="contradiction", verdict="contradicted", evidence="Core DC +653%", severity="high")],
+        claims_checked=9, summary="1 issue.", provenance=Provenance(source="Saturn (critic)"))
+    md = render(report)
+    assert "Verification (Critic)" in md and "contradiction" in md and "Cloud fastest-growing" in md
+
+
+def test_render_verification_absent():
+    report = _sample_report()
+    report.critic_review = None
+    assert "_Verification unavailable._" in render(report)

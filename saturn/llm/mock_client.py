@@ -24,6 +24,8 @@ _DEBATE = json.dumps(
     }
 )
 
+_CRITIC = json.dumps({"claims_checked": 0, "summary": "[MOCK] verification placeholder.", "findings": []})
+
 
 class MockLLMClient:
     """Returns fixed JSON keyed by the OUTPUT_SCHEMA tag in the prompt."""
@@ -35,4 +37,6 @@ class MockLLMClient:
             return _DEBATE
         if "OUTPUT_SCHEMA=analysis" in prompt:
             return _ANALYSIS
+        if "OUTPUT_SCHEMA=critic" in prompt:
+            return _CRITIC
         return "{}"
