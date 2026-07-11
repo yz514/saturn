@@ -308,8 +308,14 @@ def render(report: ResearchReport) -> str:
     if cr is None:
         out.append("_Verification unavailable._")
     elif not cr.findings:
-        out.append(f"_No material discrepancies found against the underlying data ({cr.claims_checked} claims checked)._")
+        if cr.repaired:
+            out.append(f"_Auto-corrected by the Critic (self-repair): all flagged issues resolved ({cr.claims_checked} claims checked)._")
+        else:
+            out.append(f"_No material discrepancies found against the underlying data ({cr.claims_checked} claims checked)._")
     else:
+        if cr.repaired:
+            out.append("_Auto-corrected by the Critic (self-repair); the issue(s) below remain._")
+            out.append("")
         out.append(f"{cr.summary} ({cr.claims_checked} claims checked)")
         out.append("")
         for f in cr.findings:

@@ -336,3 +336,11 @@ def test_render_verification_absent():
     report = _sample_report()
     report.critic_review = None
     assert "_Verification unavailable._" in render(report)
+
+
+def test_render_verification_repaired_note():
+    from saturn.models import CriticReview, Provenance
+    report = _sample_report()
+    report.critic_review = CriticReview(findings=[], claims_checked=5, summary="ok",
+                                        repaired=True, provenance=Provenance(source="Saturn (critic)"))
+    assert "Auto-corrected" in render(report)

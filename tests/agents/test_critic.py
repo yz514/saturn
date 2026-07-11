@@ -29,6 +29,36 @@ def test_dollar_not_grounded():
     assert is_dollar_grounded("$999B", _dossier()) is False
 
 
+def test_number_not_grounded_on_bare_short_digit_in_source():
+    """A fabricated '$2 billion' must NOT ground merely because the digit '2'
+    appears somewhere in the filing text (e.g. 'Q2'). Regression: the source-text
+    fallback used to accept any substring, so a blatantly wrong figure got dropped."""
+    from datetime import date
+    from saturn.models import CompanyDossier, FilingSection, Provenance
+    d = CompanyDossier(ticker="MU", name="Micron", generated_at=date(2026, 7, 10),
+        filing_sections=[FilingSection(name="Q2 results",
+            excerpt="Q2 fiscal results were strong; segment 12 details follow.",
+            provenance=Provenance(source="SEC EDGAR"))])
+    assert is_number_grounded("revenue of only $2 billion", d) is False
+    # A 2-digit bare figure is likewise too ambiguous to ground by substring.
+    assert is_number_grounded("$12B in buybacks", d) is False
+
+
+def test_number_grounded_requires_multidigit_source_match():
+    """A specific 3+ significant-digit figure quoted verbatim still grounds."""
+    from datetime import date
+    from saturn.models import CompanyDossier, FilingSection, Provenance
+    d = CompanyDossier(ticker="MU", name="Micron", generated_at=date(2026, 7, 10),
+        filing_sections=[FilingSection(name="Cash flow",
+            excerpt="adjusted free cash flow was $18.3 billion", provenance=Provenance(source="SEC EDGAR"))])
+    assert is_number_grounded("$18.3B FCF", d) is True
+    # ...but not when it is only a substring of a larger, different number.
+    d2 = CompanyDossier(ticker="MU", name="Micron", generated_at=date(2026, 7, 10),
+        filing_sections=[FilingSection(name="x", excerpt="the figure was $118.35 per unit",
+            provenance=Provenance(source="SEC EDGAR"))])
+    assert is_number_grounded("$18.3B", d2) is False
+
+
 # ---- Task 3: critique() tests ----
 
 from saturn.agents.critic import critique
@@ -184,3 +214,57 @@ class _ConfirmedNoiseLLM:
 def test_critique_drops_confirmed_noise_keeps_real_issue():
     review = critique(_analysis(), _debate(), _pct_ratio_dossier(), _ConfirmedNoiseLLM())
     assert [f.category for f in review.findings] == ["contradiction"]
+
+
+# ---- Critic-v2: self-repair helpers + revise() ----
+
+from saturn.agents.critic import _actionable, _is_actionable_finding, _score, revise
+from saturn.models import CriticFinding, CriticReview
+
+
+def _rev(findings):
+    return CriticReview(findings=findings, provenance=Provenance(source="Saturn (critic)"))
+
+
+def _find(category="contradiction", severity="high", section="bear_thesis"):
+    return CriticFinding(claim="c", section=section, category=category, verdict="v", evidence="e", severity=severity)
+
+
+def test_score_is_severity_weighted():
+    assert _score(_rev([_find(severity="high"), _find(severity="low")])) == 4  # 3 + 1
+
+
+def test_actionable_matrix():
+    assert _is_actionable_finding(_find("contradiction", "high")) is True
+    assert _is_actionable_finding(_find("over_weighting", "medium")) is True
+    assert _is_actionable_finding(_find("contradiction", "low")) is False       # low severity
+    assert _is_actionable_finding(_find("unverified_claim", "high")) is False    # non-actionable category
+    assert _actionable(_rev([_find("contradiction", "low"), _find("unsupported_number", "medium")])) is True
+    assert _actionable(_rev([_find("unverified_claim", "high")])) is False
+
+
+class _ReviseLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        assert "OUTPUT_SCHEMA=revise" in prompt
+        return '{"bear_thesis": "corrected bear thesis"}'
+
+
+class _BadReviseLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        return "not json"
+
+
+def test_revise_returns_affected_section_corrections():
+    corrections = revise(_analysis(), _debate(), _rev([_find("contradiction", "high", "bear_thesis")]),
+                         _dossier(), _ReviseLLM())
+    assert corrections == {"bear_thesis": "corrected bear thesis"}
+
+
+def test_revise_no_actionable_findings_returns_none():
+    assert revise(_analysis(), _debate(), _rev([_find("unverified_claim", "high", "bear_thesis")]),
+                  _dossier(), _ReviseLLM()) is None
+
+
+def test_revise_soft_fails_to_none():
+    assert revise(_analysis(), _debate(), _rev([_find("contradiction", "high", "bear_thesis")]),
+                  _dossier(), _BadReviseLLM()) is None
