@@ -86,3 +86,86 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
         if not s.period.strip():
             gaps.append(f"scenario '{s.name}' missing period")
     return gaps
+
+
+SYNTHESIZE_SYSTEM = (
+    "You are a portfolio manager turning an analyst's memo into a tradeable view. You are given "
+    "the market-expectation ANCHOR, the draft report, and the underlying data. State whether the "
+    "view is above / in line with / below the anchor and WHY, grounded in specific data. If you "
+    "cannot honestly take a differentiated view, return stance 'unclear' — never manufacture one. "
+    "Give the single key variable that decides it, an OBSERVABLE falsifier (a concrete event plus a "
+    "time window), a horizon, and exactly three scenarios (bull/base/bear). Each scenario states a "
+    "period, a per-share metric with its value and basis, and a multiple with its basis — do NOT "
+    "output prices; the system computes price = value x multiple. Keep 'variant' to ONE sentence "
+    "under 35 words. Respond with ONLY a single valid JSON object, no prose, no code fences."
+)
+
+
+def _synthesize_prompt(analysis, debate, anchor: ExpectationAnchor, context: str) -> str:
+    sections = {**analysis.model_dump(), **debate.model_dump()}
+    report_text = "\n\n".join(f"[{k}]\n{v}" for k, v in sections.items())
+    return (
+        "OUTPUT_SCHEMA=alpha\n"
+        f"MARKET-EXPECTATION ANCHOR ({anchor.source}): {anchor.text}\n\n"
+        "DRAFT REPORT:\n" + report_text + "\n\n"
+        "UNDERLYING DATA (provenance-tagged):\n" + context + "\n\n"
+        "Return ONLY: {\"stance\": str, \"variant\": str, \"rationale\": str, \"confidence\": str, "
+        "\"key_variable\": str, \"falsifier\": str, \"horizon\": str, \"scenarios\": "
+        "[{\"name\": str, \"period\": str, \"driver\": str, \"metric\": str, \"metric_basis\": str, "
+        "\"per_share_value\": number, \"multiple\": number, \"multiple_basis\": str}]}. "
+        "stance in [above_expectations, in_line, below_expectations, unclear] RELATIVE TO THE ANCHOR. "
+        "confidence in [high, medium, low]. name in [bull, base, bear] (exactly 3). "
+        "metric in [EPS, FCF/share, sales/share]; metric_basis in [GAAP, non_GAAP, adjusted, cycle_normalized]; "
+        "multiple_basis in [P/E, P/FCF, P/S]. Do NOT output prices."
+    )
+
+
+def _one_of(value, allowed: tuple[str, ...], default: str) -> str:
+    return value if value in allowed else default
+
+
+def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier) -> AlphaThesis:
+    legs: list[ScenarioLeg] = []
+    for raw in (data.get("scenarios") or []):
+        try:
+            legs.append(ScenarioLeg.model_validate(raw))
+        except Exception:  # noqa: BLE001 - drop a single malformed leg, keep the rest
+            continue
+    quote_price = dossier.quote.price if dossier.quote else None
+    legs = _price_scenarios(legs, quote_price)
+    thesis = AlphaThesis(
+        anchor=anchor,
+        stance=_one_of(data.get("stance"), ("above_expectations", "in_line", "below_expectations", "unclear"), "unclear"),
+        variant=str(data.get("variant") or ""),
+        rationale=str(data.get("rationale") or ""),
+        confidence=_one_of(data.get("confidence"), ("high", "medium", "low"), "low"),
+        key_variable=str(data.get("key_variable") or ""),
+        falsifier=str(data.get("falsifier") or ""),
+        horizon=str(data.get("horizon") or ""),
+        scenarios=legs,
+        provenance=Provenance(source="Saturn (synthesist)"),
+    )
+    thesis.incompleteness = alpha_completeness(thesis)
+    return thesis
+
+
+def synthesize(analysis, debate, dossier: CompanyDossier, llm, *, model: str | None = None) -> AlphaThesis | None:
+    """Produce a structured AlphaThesis. Resilient to imperfect LLM JSON (one retry, per-leg
+    validation, sanitized enums). Soft-fails to None; never breaks the report."""
+    from saturn.workflows.equity_research import _company_context, _extract_json
+    try:
+        anchor = _resolve_anchor(dossier)
+        prompt = _synthesize_prompt(analysis, debate, anchor, _company_context(dossier))
+        strict = "\n\nIMPORTANT: your previous reply was not valid JSON. Return ONLY a single, strictly valid JSON object."
+        for attempt in range(2):
+            raw = llm.complete(SYNTHESIZE_SYSTEM, prompt if attempt == 0 else prompt + strict,
+                               model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+            try:
+                return _build_thesis(json.loads(_extract_json(raw)), anchor, dossier)
+            except Exception:  # noqa: BLE001 - malformed JSON; retry once then give up
+                continue
+        logger.warning("synthesist unavailable for %s: JSON unparseable after retry", getattr(dossier, "ticker", "?"))
+        return None
+    except Exception as exc:  # noqa: BLE001 - synthesist is best-effort, never breaks the report
+        logger.warning("synthesist unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)
+        return None

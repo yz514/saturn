@@ -92,3 +92,71 @@ def test_completeness_flags_scenario_missing_period():
     bad.period = ""     # blank period on one leg
     gaps = alpha_completeness(_complete_thesis(scenarios=[bad, _leg("base"), _leg("bear")]))
     assert any("missing period" in g and "bull" in g for g in gaps)
+
+
+import json as _json
+from saturn.agents.synthesist import synthesize
+
+
+def _valid_alpha_json():
+    return _json.dumps({
+        "stance": "above_expectations", "variant": "Market underrates HBM margin durability.",
+        "rationale": "SCAs lock demand.", "confidence": "medium", "key_variable": "HBM gross margin",
+        "falsifier": "GM below 60% within 2 quarters", "horizon": "12-18 months",
+        "scenarios": [
+            {"name": "bull", "period": "FY2027", "driver": "HBM scarcity persists", "metric": "EPS",
+             "metric_basis": "adjusted", "per_share_value": 13.0, "multiple": 18.0, "multiple_basis": "P/E"},
+            {"name": "base", "period": "FY2027", "driver": "normalizing", "metric": "EPS",
+             "metric_basis": "adjusted", "per_share_value": 10.0, "multiple": 15.0, "multiple_basis": "P/E"},
+            {"name": "bear", "period": "FY2027", "driver": "oversupply", "metric": "EPS",
+             "metric_basis": "adjusted", "per_share_value": 6.0, "multiple": 10.0, "multiple_basis": "P/E"}]})
+
+
+class _AlphaLLM:
+    def __init__(self, payload): self.payload = payload
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        assert "OUTPUT_SCHEMA=alpha" in prompt
+        return self.payload
+
+
+def _dossier_with_quote():
+    return _dossier(quote=Quote(price=100.0, provenance=Provenance(source="yfinance")),
+                    consensus=ConsensusSnapshot(forward_pe=6.5, provenance=Provenance(source="yfinance (estimate)")))
+
+
+def _analysis():
+    from saturn.models import AnalysisSections
+    return AnalysisSections(executive_summary="e", company_overview="o", business_segments="s",
+        financial_snapshot="f", valuation_discussion="v", key_risks="r", open_questions="q")
+
+
+def _debate():
+    from saturn.models import DebateSections
+    return DebateSections(bull_thesis="b", bear_thesis="be", final_view="fv")
+
+
+def test_synthesize_builds_priced_thesis():
+    t = synthesize(_analysis(), _debate(), _dossier_with_quote(), _AlphaLLM(_valid_alpha_json()))
+    assert t is not None and t.stance == "above_expectations" and len(t.scenarios) == 3
+    base = next(s for s in t.scenarios if s.name == "base")
+    assert base.implied_price == 150.0 and t.anchor.source == "consensus"
+    assert t.incompleteness == []            # complete
+    assert t.provenance.source == "Saturn (synthesist)"
+
+
+def test_synthesize_malformed_soft_fails_to_none():
+    assert synthesize(_analysis(), _debate(), _dossier_with_quote(), _AlphaLLM("not json")) is None
+
+
+def test_synthesize_drops_bad_leg_keeps_rest():
+    bad = _json.loads(_valid_alpha_json())
+    bad["scenarios"][0]["metric"] = "revenue"     # invalid literal -> that leg dropped
+    t = synthesize(_analysis(), _debate(), _dossier_with_quote(), _AlphaLLM(_json.dumps(bad)))
+    assert len(t.scenarios) == 2 and any("3 scenarios" in g for g in t.incompleteness)
+
+
+def test_synthesize_sanitizes_bad_stance():
+    d = _json.loads(_valid_alpha_json())
+    d["stance"] = "STRONG BUY"                     # not a valid literal -> coerced to unclear
+    t = synthesize(_analysis(), _debate(), _dossier_with_quote(), _AlphaLLM(_json.dumps(d)))
+    assert t.stance == "unclear"
