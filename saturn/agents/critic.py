@@ -216,6 +216,16 @@ def _actionable(review: CriticReview) -> bool:
     return any(_is_actionable_finding(f) for f in review.findings)
 
 
+def _is_alpha_actionable(f) -> bool:
+    """A high/medium finding on the alpha thesis — repairable by rewriting its prose fields.
+    (Kept separate from _is_actionable_finding: alpha findings do not trigger section revise.)"""
+    return f.severity in ("high", "medium") and (f.section or "").startswith("alpha_thesis")
+
+
+def _alpha_actionable(review: CriticReview) -> bool:
+    return any(_is_alpha_actionable(f) for f in review.findings)
+
+
 def _score(review: CriticReview) -> int:
     """Severity-weighted issue score (high=3, medium=2, low=1); lower is better."""
     return sum(_SEVERITY_WEIGHT.get(f.severity, 1) for f in review.findings)
