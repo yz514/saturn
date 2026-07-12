@@ -221,3 +221,15 @@ def test_synthesize_in_line_consensus_stance():
     t = synthesize(_analysis(), _debate(), d, _AlphaLLM(_valid_alpha_json()))
     assert t.stance == "in_line_consensus"
     assert "base +50% vs consensus target +45%" in t.stance_basis
+
+
+def test_synthesize_system_frames_rationale_and_forbids_verdict():
+    from saturn.agents.synthesist import SYNTHESIZE_SYSTEM
+    s = SYNTHESIZE_SYSTEM.lower()
+    # rationale must be framed on the base-case-vs-anchor axis...
+    assert "base-case" in s and "rationale" in s
+    # ...and the model must NOT assert its own overall verdict / re-declare the stance
+    assert "do not assert" in s
+    assert "the system derives" in s
+    # the old verdict-assertion clause is gone
+    assert "state whether the view is above / in line with / below the anchor and why" not in s
