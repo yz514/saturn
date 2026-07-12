@@ -104,9 +104,15 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
 
 SYNTHESIZE_SYSTEM = (
     "You are a portfolio manager turning an analyst's memo into a tradeable view. You are given "
-    "the market-expectation ANCHOR, the draft report, and the underlying data. State whether the "
-    "view is above / in line with / below the anchor and WHY, grounded in specific data. If you "
-    "cannot honestly take a differentiated view, return stance 'unclear' — never manufacture one. "
+    "the market-expectation ANCHOR, the draft report, and the underlying data. Write the RATIONALE "
+    "around how your base-case scenario's return compares to the anchor — the consensus target "
+    "upside, or the model-implied expectation — e.g. 'our base case implies +X% vs the Street's "
+    "+Y%, below/above because ...', grounded in specific data. Do NOT assert an overall 'consistent "
+    "with / differentiated from consensus' verdict and do NOT re-state the stance label in prose: "
+    "the system derives and labels the stance deterministically from your base-case return vs "
+    "consensus. Still return a 'stance' field — it is used only as a fallback when there is no "
+    "consensus target; if you cannot take a differentiated view there, use 'unclear' and never "
+    "manufacture one. "
     "Give the single key variable that decides it, an OBSERVABLE falsifier (a concrete event plus a "
     "time window), a horizon, and exactly three scenarios (bull/base/bear). Each scenario states a "
     "period, a per-share metric with its value and basis, and a multiple with its basis — do NOT "
