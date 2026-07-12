@@ -24,7 +24,7 @@ def _revenue_cagr_3y(idx, latest_fy: str) -> float | None:
     return (cur.value / prev.value) ** (1 / 3) - 1
 
 
-def compute_driver_model(fundamentals, quote, consensus) -> DriverModel | None:
+def compute_driver_model(fundamentals, quote, consensus, *, growth_override: float | None = None) -> DriverModel | None:
     """Trailing-trend forward EPS + consensus two-lens decomposition. Soft-returns None when a
     required input is missing. `quote` is reserved for the FCF bridge / P-E cross-check in later
     slices (unused here). Consensus fields populate only when a consensus forward EPS exists."""
@@ -43,11 +43,16 @@ def compute_driver_model(fundamentals, quote, consensus) -> DriverModel | None:
 
     caveats: list[str] = []
     low_conf = False
-    g = _revenue_cagr_3y(idx, latest_fy)
-    if g is None:
-        g = 0.0
-        caveats.append("no 3-year revenue history; growth assumed 0%")
-        low_conf = True
+    if growth_override is not None:
+        g = growth_override
+        growth_source = "guidance"
+    else:
+        growth_source = "trend"
+        g = _revenue_cagr_3y(idx, latest_fy)
+        if g is None:
+            g = 0.0
+            caveats.append("no 3-year revenue history; growth assumed 0%")
+            low_conf = True
     if margin <= 0:
         caveats.append("trailing net margin is non-positive; the trend-EPS bridge is unreliable")
         low_conf = True
@@ -79,5 +84,6 @@ def compute_driver_model(fundamentals, quote, consensus) -> DriverModel | None:
         consensus_implied_margin=implied_m,
         low_confidence=low_conf,
         caveats=caveats,
+        growth_source=growth_source,
         provenance=Provenance(source=_MODEL, as_of=date.today()),
     )

@@ -74,3 +74,24 @@ def test_driver_low_confidence_extreme_implied_growth():
     assert abs(dm.consensus_implied_growth - 1.0) < 1e-9
     assert dm.low_confidence is True
     assert any("extreme" in c for c in dm.caveats)
+
+
+def test_driver_growth_override_uses_guidance_growth():
+    dm = compute_driver_model(_facts(_base_rows()), _quote(), None, growth_override=0.15)
+    assert abs(dm.trailing_revenue_growth - 0.15) < 1e-9
+    assert dm.growth_source == "guidance"
+    exp = 1000 * 1.15 * 0.10 / 50
+    assert abs(dm.saturn_eps - exp) < 1e-9
+
+
+def test_driver_growth_override_suppresses_no_history_caveat():
+    rows = [("Revenues", "FY2025", 1000.0),  # no FY2022 -> no trailing CAGR
+            ("NetIncomeLoss", "FY2025", 100.0), ("WeightedAverageSharesDiluted", "FY2025", 50.0)]
+    dm = compute_driver_model(_facts(rows), _quote(), None, growth_override=0.12)
+    assert dm.trailing_revenue_growth == 0.12 and dm.growth_source == "guidance"
+    assert not any("no 3-year revenue history" in c for c in dm.caveats)
+
+
+def test_driver_without_override_is_trend():
+    dm = compute_driver_model(_facts(_base_rows()), _quote(), None)
+    assert dm.growth_source == "trend"
