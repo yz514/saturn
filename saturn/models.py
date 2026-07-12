@@ -167,7 +167,8 @@ class AlphaThesis(BaseModel):
     LLM-supplied fields default so a partial LLM response still validates; the
     completeness gate flags the gaps."""
     anchor: ExpectationAnchor
-    stance: Literal["above_expectations", "in_line", "below_expectations", "unclear"] = "unclear"
+    stance: Literal["above_consensus", "in_line_consensus", "below_consensus", "unclear"] = "unclear"
+    stance_basis: str = ""   # human note on how stance was derived (or that it was LLM-declared)
     variant: str = ""
     rationale: str = ""
     confidence: Literal["high", "medium", "low"] = "low"

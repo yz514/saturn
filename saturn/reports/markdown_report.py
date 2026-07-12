@@ -147,7 +147,8 @@ def _render_alpha(thesis) -> list[str]:
     a = thesis.anchor
     out.append(f"**Anchor** ({a.source}): {a.text}")
     out.append("")
-    out.append(f"**Stance:** {thesis.stance.replace('_', ' ')} · confidence {thesis.confidence}")
+    basis = f"  ({thesis.stance_basis})" if thesis.stance_basis else ""
+    out.append(f"**Stance:** {thesis.stance.replace('_', ' ')} · confidence {thesis.confidence}{basis}")
     out.append("")
     if thesis.variant:
         out += [f"**Variant perception:** {thesis.variant}", ""]
@@ -172,6 +173,22 @@ def _render_alpha(thesis) -> list[str]:
     return out
 
 
+def _render_high_severity_banner(review) -> list[str]:
+    """A prominent warning block for UNRESOLVED high-severity Critic findings, so a wrong figure
+    can't sit silently in the prose and only surface at §15. Empty when there are none."""
+    if review is None:
+        return []
+    highs = [f for f in review.findings if f.severity == "high"]
+    if not highs:
+        return []
+    out = ["> ⚠️ **Unresolved high-severity audit finding(s)** — treat the affected figures as provisional:"]
+    for f in highs:
+        claim = (f.claim or "")[:120]
+        out.append(f"> - **[{f.section}]** {claim}")
+    out.append("")
+    return out
+
+
 def render(report: ResearchReport) -> str:
     """Return the markdown for a research report (pure function)."""
     c = report.company
@@ -189,6 +206,7 @@ def render(report: ResearchReport) -> str:
     out.append("")
 
     out += ["## 1. Executive Summary", "", a.executive_summary, ""]
+    out += _render_high_severity_banner(report.critic_review)
     if report.alpha_thesis is not None:
         out += _render_alpha(report.alpha_thesis)
     else:

@@ -351,7 +351,7 @@ def _alpha_thesis(incomplete=False):
     from saturn.models import AlphaThesis, ExpectationAnchor, ScenarioLeg, Provenance
     return AlphaThesis(
         anchor=ExpectationAnchor(source="consensus", text="forward P/E 6.5x", confidence="medium"),
-        stance="above_expectations", variant="Market underrates HBM margin durability.",
+        stance="above_consensus", variant="Market underrates HBM margin durability.",
         rationale="SCAs lock demand.", confidence="medium", key_variable="HBM gross margin",
         falsifier="GM below 60% within 2 quarters", horizon="12-18 months",
         scenarios=[ScenarioLeg(name="base", period="FY2027", driver="normalizing", metric="EPS",
@@ -393,3 +393,38 @@ def test_render_alpha_escapes_pipe_in_driver():
     report.alpha_thesis = thesis
     md = render(report)
     assert "beat \\| re-rate" in md
+
+
+def test_render_alpha_shows_stance_basis():
+    report = _sample_report()
+    thesis = _alpha_thesis()
+    thesis.stance_basis = "base +11% vs consensus target +45%"
+    report.alpha_thesis = thesis
+    md = render(report)
+    assert "base +11% vs consensus target +45%" in md
+
+
+def test_render_high_severity_banner_present():
+    from saturn.models import CriticReview, CriticFinding, Provenance
+    report = _sample_report()
+    report.critic_review = CriticReview(
+        findings=[CriticFinding(claim="RPO coverage ratio internally inconsistent",
+                  section="valuation_discussion", category="contradiction", verdict="contradicted",
+                  evidence="7.6x vs 2.2x", severity="high")],
+        claims_checked=10, summary="s", provenance=Provenance(source="Saturn (critic)"))
+    md = render(report)
+    assert "Unresolved high-severity audit finding" in md
+    assert "RPO coverage ratio internally inconsistent" in md
+    # banner sits after the Executive Summary and before the Alpha Thesis
+    assert md.index("Unresolved high-severity") < md.index("## 2. Alpha Thesis")
+    assert md.index("## 1. Executive Summary") < md.index("Unresolved high-severity")
+
+
+def test_render_no_banner_without_high_findings():
+    from saturn.models import CriticReview, CriticFinding, Provenance
+    report = _sample_report()
+    report.critic_review = CriticReview(
+        findings=[CriticFinding(claim="minor", section="x", category="contradiction",
+                  verdict="v", evidence="e", severity="low")],
+        claims_checked=5, summary="s", provenance=Provenance(source="Saturn (critic)"))
+    assert "Unresolved high-severity" not in render(report)

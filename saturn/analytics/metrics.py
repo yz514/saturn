@@ -525,17 +525,26 @@ def _latest_fact(idx, concept):
 
 
 def _backlog(idx) -> list[DerivedMetric | None]:
-    """rpo_to_revenue: latest contracted backlog (RPO — disclosed irregularly, often only at a
-    quarter-end) over latest-FY revenue = a current revenue-visibility signal."""
+    """RPO coverage over two explicit revenue bases (explicit denominators avoid the ambiguity
+    that let an LLM fabricate a mislabelled ratio). rpo_to_ttm_revenue uses trailing-12-mo
+    revenue; rpo_to_annualized_quarterly_revenue uses the latest quarter annualized (current
+    run-rate). Both need quarterly revenue, so annual-only filers emit neither."""
     latest = _latest_fact(idx, "RemainingPerformanceObligation")
-    fy = _annual_periods(idx)
-    if not latest or not fy:
+    if not latest:
         return []
     period, rpo = latest
-    rev = _fact(idx, "Revenues", fy[0])
-    if not rev or rev.value == 0:
-        return []
-    return [_make("rpo_to_revenue", _div(rpo.value, rev.value), period, [_in(rpo), _in(rev)])]
+    out: list[DerivedMetric | None] = []
+    ttm = _ttm(idx, "Revenues")
+    if ttm is not None:
+        ttm_val, ttm_inputs = ttm
+        out.append(_make("rpo_to_ttm_revenue", _div(rpo.value, ttm_val), period, [_in(rpo), *ttm_inputs]))
+    qps = _quarterly_periods(idx)
+    if qps:
+        rev_q = _fact(idx, "Revenues", qps[0])
+        if rev_q is not None and rev_q.value:
+            out.append(_make("rpo_to_annualized_quarterly_revenue",
+                             _div(rpo.value, rev_q.value * 4), period, [_in(rpo), _in(rev_q)]))
+    return out
 
 
 def compute_metrics(fundamentals: Fundamentals | None, quote: Quote | None) -> list[DerivedMetric]:

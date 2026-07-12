@@ -8,6 +8,20 @@ from saturn.models import AlphaThesis, CompanyDossier, ExpectationAnchor, Proven
 
 logger = logging.getLogger(__name__)
 _MAX_OUTPUT_TOKENS = 8192
+_STANCE_BAND = 0.10  # ±10 percentage points around the consensus target defines "in line"
+
+
+def _derive_stance(base_return: float | None, target_upside: float | None) -> str | None:
+    """Consensus-relative stance from Saturn's base-case return vs the Street's target upside.
+    Returns None when it can't be derived (no target / no base return) so the caller keeps the
+    LLM-declared stance. Because it reads the base leg, it can never contradict the scenarios."""
+    if base_return is None or target_upside is None:
+        return None
+    if base_return >= target_upside + _STANCE_BAND:
+        return "above_consensus"
+    if base_return <= target_upside - _STANCE_BAND:
+        return "below_consensus"
+    return "in_line_consensus"
 
 
 def _resolve_anchor(dossier: CompanyDossier) -> ExpectationAnchor:
@@ -113,7 +127,9 @@ def _synthesize_prompt(analysis, debate, anchor: ExpectationAnchor, context: str
         "\"key_variable\": str, \"falsifier\": str, \"horizon\": str, \"scenarios\": "
         "[{\"name\": str, \"period\": str, \"driver\": str, \"metric\": str, \"metric_basis\": str, "
         "\"per_share_value\": number, \"multiple\": number, \"multiple_basis\": str}]}. "
-        "stance in [above_expectations, in_line, below_expectations, unclear] RELATIVE TO THE ANCHOR. "
+        "stance in [above_consensus, in_line_consensus, below_consensus, unclear]. Your declared "
+        "value is used ONLY when there is no consensus price target; otherwise the system derives "
+        "stance deterministically from the base-case return vs consensus. "
         "confidence in [high, medium, low]. name in [bull, base, bear] (exactly 3). "
         "metric in [EPS, FCF/share, sales/share]; metric_basis in [GAAP, non_GAAP, adjusted, cycle_normalized]; "
         "multiple_basis in [P/E, P/FCF, P/S]. Do NOT output prices."
@@ -135,13 +151,26 @@ def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier
             continue
     quote_price = dossier.quote.price if dossier.quote else None
     legs = _price_scenarios(legs, quote_price)
+    stance = _one_of(
+        data.get("stance"),
+        ("above_consensus", "in_line_consensus", "below_consensus", "unclear"),
+        "unclear",
+    )
+    base_leg = next((s for s in legs if s.name == "base"), None)
+    base_return = base_leg.implied_return_pct if base_leg else None
+    target = dossier.consensus.target_upside_pct if dossier.consensus else None
+    derived = _derive_stance(base_return, target)
+    if derived is not None:
+        stance = derived
+        stance_basis = f"base {base_return:+.0%} vs consensus target {target:+.0%}"
+    elif base_return is None:
+        stance_basis = "stance LLM-declared; no base-case return (no quote?)"
+    else:
+        stance_basis = "stance LLM-declared vs model-implied anchor; no consensus target"
     thesis = AlphaThesis(
         anchor=anchor,
-        stance=_one_of(
-            data.get("stance"),
-            ("above_expectations", "in_line", "below_expectations", "unclear"),
-            "unclear",
-        ),
+        stance=stance,
+        stance_basis=stance_basis,
         variant=str(data.get("variant") or ""),
         rationale=str(data.get("rationale") or ""),
         confidence=_one_of(data.get("confidence"), ("high", "medium", "low"), "low"),

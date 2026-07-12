@@ -140,7 +140,9 @@ def _critic_prompt(analysis, debate, context: str, low_conf: bool, alpha=None) -
                   "scenario driver has no support in the data; the falsifier is not an observable "
                   "event with a time window; or a conclusion is stronger than its evidence (e.g. an "
                   "accounting inference with no contract-liability / deferred-revenue / filing "
-                  "support).\n" if alpha is not None else "")
+                  "support). Also flag it when the alpha STANCE contradicts the Final View — e.g. "
+                  "stance below_consensus while the Final View reads as an aggressive buy.\n"
+                  if alpha is not None else "")
     categories = ("[unsupported_number, contradiction, over_weighting, unverified_claim"
                   + (", unsupported_alpha_inference]" if alpha is not None else "]"))
     return (
@@ -239,7 +241,10 @@ def revise(analysis, debate, review: CriticReview, dossier: CompanyDossier, llm,
     try:
         actionable = [f for f in review.findings if _is_actionable_finding(f)]
         sections = {**analysis.model_dump(), **debate.model_dump()}
-        affected = sorted({f.section for f in actionable if f.section in sections})
+        if any(f.category == "contradiction" for f in actionable):
+            affected = sorted(sections.keys())
+        else:
+            affected = sorted({f.section for f in actionable if f.section in sections})
         if not affected:
             return None
         problems = "\n".join(

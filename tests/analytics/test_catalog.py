@@ -10,7 +10,7 @@ CANONICAL = {
     "roe", "roa", "roic", "roce",
     "current_ratio", "quick_ratio", "cash_ratio",
     "debt_to_equity", "debt_to_assets", "net_debt", "net_debt_to_ebitda", "interest_coverage",
-    "asset_turnover", "inventory_turnover", "capex_intensity", "days_sales_outstanding", "rpo_to_revenue",
+    "asset_turnover", "inventory_turnover", "capex_intensity", "days_sales_outstanding", "rpo_to_ttm_revenue", "rpo_to_annualized_quarterly_revenue",
     "fcf", "fcf_conversion",
     "revenue_growth_yoy", "eps_growth_yoy", "fcf_growth_yoy",
     "revenue_cagr_3y", "eps_cagr_3y", "revenue_growth_qoq",

@@ -58,7 +58,7 @@ def test_price_scenarios_zero_quote_leaves_return_none():
 def _complete_thesis(**kw):
     base = dict(
         anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
-        stance="above_expectations", variant="Market underrates HBM margin durability.",
+        stance="above_consensus", variant="Market underrates HBM margin durability.",
         rationale="r", confidence="medium", key_variable="HBM gross margin",
         falsifier="GM below 60% next 2 quarters", horizon="12-18 months",
         scenarios=[_leg("bull"), _leg("base"), _leg("bear")],
@@ -100,7 +100,7 @@ from saturn.agents.synthesist import synthesize
 
 def _valid_alpha_json():
     return _json.dumps({
-        "stance": "above_expectations", "variant": "Market underrates HBM margin durability.",
+        "stance": "above_consensus", "variant": "Market underrates HBM margin durability.",
         "rationale": "SCAs lock demand.", "confidence": "medium", "key_variable": "HBM gross margin",
         "falsifier": "GM below 60% within 2 quarters", "horizon": "12-18 months",
         "scenarios": [
@@ -137,7 +137,7 @@ def _debate():
 
 def test_synthesize_builds_priced_thesis():
     t = synthesize(_analysis(), _debate(), _dossier_with_quote(), _AlphaLLM(_valid_alpha_json()))
-    assert t is not None and t.stance == "above_expectations" and len(t.scenarios) == 3
+    assert t is not None and t.stance == "above_consensus" and len(t.scenarios) == 3
     base = next(s for s in t.scenarios if s.name == "base")
     assert base.implied_price == 150.0 and t.anchor.source == "consensus"
     assert t.incompleteness == []            # complete
@@ -182,3 +182,42 @@ def test_synthesize_reverse_dcf_anchor_end_to_end():
     assert len(t.scenarios) == 3
     base = next(s for s in t.scenarios if s.name == "base")
     assert base.implied_price == 150.0    # 10 x 15 from the shared valid-alpha payload
+
+
+def test_derive_stance_matrix():
+    from saturn.agents.synthesist import _derive_stance
+    assert _derive_stance(0.60, 0.45) == "above_consensus"     # base well above target
+    assert _derive_stance(0.11, 0.45) == "below_consensus"     # base well below target (MSFT)
+    assert _derive_stance(0.42, 0.45) == "in_line_consensus"   # within the 10pp band
+    assert _derive_stance(0.11, None) is None                  # no target -> keep LLM stance
+    assert _derive_stance(None, 0.45) is None                  # no base return
+
+
+def test_synthesize_overrides_stance_from_consensus_target():
+    from saturn.models import ConsensusSnapshot
+    # base leg 10x15=150 vs quote 100 -> +50%; consensus target +80% -> +50% <= +70% -> below_consensus,
+    # overriding the LLM's declared "above_consensus".
+    d = _dossier(quote=Quote(price=100.0, provenance=Provenance(source="yfinance")),
+                 consensus=ConsensusSnapshot(target_mean=180.0, target_upside_pct=0.80,
+                                             provenance=Provenance(source="yfinance (estimate)")))
+    t = synthesize(_analysis(), _debate(), d, _AlphaLLM(_valid_alpha_json()))
+    assert t.stance == "below_consensus"
+    assert "base +50% vs consensus target +80%" in t.stance_basis
+
+
+def test_synthesize_keeps_llm_stance_without_consensus_target():
+    # consensus present but no target_upside_pct -> derive returns None -> keep LLM's stance.
+    t = synthesize(_analysis(), _debate(), _dossier_with_quote(), _AlphaLLM(_valid_alpha_json()))
+    assert t.stance == "above_consensus"                       # from the (updated) payload
+    assert "no consensus target" in t.stance_basis
+
+
+def test_synthesize_in_line_consensus_stance():
+    from saturn.models import ConsensusSnapshot
+    # base leg 10x15=150 vs quote 100 -> +50%; target +45% -> within +/-10pp band -> in_line_consensus
+    d = _dossier(quote=Quote(price=100.0, provenance=Provenance(source="yfinance")),
+                 consensus=ConsensusSnapshot(target_mean=145.0, target_upside_pct=0.45,
+                                             provenance=Provenance(source="yfinance (estimate)")))
+    t = synthesize(_analysis(), _debate(), d, _AlphaLLM(_valid_alpha_json()))
+    assert t.stance == "in_line_consensus"
+    assert "base +50% vs consensus target +45%" in t.stance_basis

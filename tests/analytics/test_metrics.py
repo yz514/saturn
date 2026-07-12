@@ -260,16 +260,27 @@ def test_flow_over_stock_ratios_are_annual_only():
     assert _by_name(ms, "net_margin", "Q2 FY2025") is not None
 
 
-def test_rpo_to_revenue_uses_latest_rpo_over_latest_fy_revenue():
-    # RPO disclosed only at a quarter-end (no recent FY RPO, like MU) -> still computes, at that
-    # quarter, over latest-FY revenue = a current revenue-visibility signal.
+def test_backlog_emits_two_explicit_rpo_ratios():
+    # Full 4 quarters -> TTM revenue = 92; latest quarter (Q4) = 26 -> annualized run-rate = 104.
     rows = [
-        ("RemainingPerformanceObligation", "Q3 FY2026", 5.0),
-        ("Revenues", "FY2025", 40.0), ("Revenues", "FY2024", 30.0),
+        ("RemainingPerformanceObligation", "Q4 FY2026", 100.0),
+        ("Revenues", "Q1 FY2026", 20.0), ("Revenues", "Q2 FY2026", 22.0),
+        ("Revenues", "Q3 FY2026", 24.0), ("Revenues", "Q4 FY2026", 26.0),
     ]
     ms = compute_metrics(_facts(rows), None)
-    rpo = _by_name(ms, "rpo_to_revenue", "Q3 FY2026")
-    assert rpo is not None and abs(rpo.value - 0.125) < 1e-9   # 5 / 40 (latest FY revenue)
+    ttm = _by_name(ms, "rpo_to_ttm_revenue", "Q4 FY2026")
+    annq = _by_name(ms, "rpo_to_annualized_quarterly_revenue", "Q4 FY2026")
+    assert ttm is not None and abs(ttm.value - 100 / 92) < 1e-9
+    assert annq is not None and abs(annq.value - 100 / 104) < 1e-9
+    assert _by_name(ms, "rpo_to_revenue", "Q4 FY2026") is None    # old ambiguous metric removed
+
+
+def test_backlog_soft_fails_without_quarterly_revenue():
+    # RPO but only annual revenue -> the run-rate ratios need quarterly data -> none emitted.
+    rows = [("RemainingPerformanceObligation", "Q3 FY2026", 5.0), ("Revenues", "FY2025", 40.0)]
+    ms = compute_metrics(_facts(rows), None)
+    assert _by_name(ms, "rpo_to_ttm_revenue", "Q3 FY2026") is None
+    assert _by_name(ms, "rpo_to_annualized_quarterly_revenue", "Q3 FY2026") is None
 
 
 def test_per_share_growth_skipped_on_split_like_share_change():

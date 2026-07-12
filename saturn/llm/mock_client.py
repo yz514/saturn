@@ -28,7 +28,7 @@ _CRITIC = json.dumps({"claims_checked": 0, "summary": "[MOCK] verification place
 
 _ALPHA = json.dumps(
     {
-        "stance": "in_line",
+        "stance": "in_line_consensus",
         "variant": "[MOCK] No differentiated view in offline mode.",
         "rationale": "[MOCK] Placeholder rationale.",
         "confidence": "low",
