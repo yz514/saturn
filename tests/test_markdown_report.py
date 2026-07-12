@@ -402,3 +402,29 @@ def test_render_alpha_shows_stance_basis():
     report.alpha_thesis = thesis
     md = render(report)
     assert "base +11% vs consensus target +45%" in md
+
+
+def test_render_high_severity_banner_present():
+    from saturn.models import CriticReview, CriticFinding, Provenance
+    report = _sample_report()
+    report.critic_review = CriticReview(
+        findings=[CriticFinding(claim="RPO coverage ratio internally inconsistent",
+                  section="valuation_discussion", category="contradiction", verdict="contradicted",
+                  evidence="7.6x vs 2.2x", severity="high")],
+        claims_checked=10, summary="s", provenance=Provenance(source="Saturn (critic)"))
+    md = render(report)
+    assert "Unresolved high-severity audit finding" in md
+    assert "RPO coverage ratio internally inconsistent" in md
+    # banner sits after the Executive Summary and before the Alpha Thesis
+    assert md.index("Unresolved high-severity") < md.index("## 2. Alpha Thesis")
+    assert md.index("## 1. Executive Summary") < md.index("Unresolved high-severity")
+
+
+def test_render_no_banner_without_high_findings():
+    from saturn.models import CriticReview, CriticFinding, Provenance
+    report = _sample_report()
+    report.critic_review = CriticReview(
+        findings=[CriticFinding(claim="minor", section="x", category="contradiction",
+                  verdict="v", evidence="e", severity="low")],
+        claims_checked=5, summary="s", provenance=Provenance(source="Saturn (critic)"))
+    assert "Unresolved high-severity" not in render(report)
