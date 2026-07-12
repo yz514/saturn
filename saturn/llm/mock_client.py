@@ -26,6 +26,26 @@ _DEBATE = json.dumps(
 
 _CRITIC = json.dumps({"claims_checked": 0, "summary": "[MOCK] verification placeholder.", "findings": []})
 
+_ALPHA = json.dumps(
+    {
+        "stance": "in_line",
+        "variant": "[MOCK] No differentiated view in offline mode.",
+        "rationale": "[MOCK] Placeholder rationale.",
+        "confidence": "low",
+        "key_variable": "[MOCK] key variable",
+        "falsifier": "[MOCK] observable event within 2 quarters",
+        "horizon": "next 2 quarters",
+        "scenarios": [
+            {"name": "bull", "period": "FY2027", "driver": "[MOCK]", "metric": "EPS",
+             "metric_basis": "adjusted", "per_share_value": 13.0, "multiple": 18.0, "multiple_basis": "P/E"},
+            {"name": "base", "period": "FY2027", "driver": "[MOCK]", "metric": "EPS",
+             "metric_basis": "adjusted", "per_share_value": 10.0, "multiple": 15.0, "multiple_basis": "P/E"},
+            {"name": "bear", "period": "FY2027", "driver": "[MOCK]", "metric": "EPS",
+             "metric_basis": "adjusted", "per_share_value": 6.0, "multiple": 10.0, "multiple_basis": "P/E"},
+        ],
+    }
+)
+
 
 class MockLLMClient:
     """Returns fixed JSON keyed by the OUTPUT_SCHEMA tag in the prompt."""
@@ -33,6 +53,8 @@ class MockLLMClient:
     def complete(
         self, system: str, prompt: str, *, model: str | None = None, max_tokens: int = 2000
     ) -> str:
+        if "OUTPUT_SCHEMA=alpha" in prompt:
+            return _ALPHA
         if "OUTPUT_SCHEMA=debate" in prompt:
             return _DEBATE
         if "OUTPUT_SCHEMA=analysis" in prompt:

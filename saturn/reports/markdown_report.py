@@ -125,8 +125,8 @@ def _select_report_facts(facts: list) -> tuple[list, list[tuple[str, str]]]:
 
 
 def _render_catalysts_from_events(events: list) -> list[str]:
-    """Compact catalyst lines from recent 8-K material events, used for §7 when no
-    third-party news feed is available. Full excerpts stay in §16 (no duplication)."""
+    """Compact catalyst lines from recent 8-K material events, used for §8 when no
+    third-party news feed is available. Full excerpts stay in §17 (no duplication)."""
     lines: list[str] = []
     for ev in sorted(events, key=lambda e: e.filing_date, reverse=True)[:_RPT_MAX_CATALYSTS]:
         head = f"- **{ev.filing_date}** — {ev.title or ev.form}"
@@ -139,6 +139,37 @@ def _render_catalysts_from_events(events: list) -> list[str]:
         lines.append("")
         lines.append("_Recent catalysts from SEC 8-K filings; no third-party news feed available._")
     return lines
+
+
+def _render_alpha(thesis) -> list[str]:
+    suffix = " (Incomplete — low confidence)" if thesis.incompleteness else ""
+    out: list[str] = [f"## 2. Alpha Thesis{suffix}", ""]  # §2 — also update render() else-branch if order changes
+    a = thesis.anchor
+    out.append(f"**Anchor** ({a.source}): {a.text}")
+    out.append("")
+    out.append(f"**Stance:** {thesis.stance.replace('_', ' ')} · confidence {thesis.confidence}")
+    out.append("")
+    if thesis.variant:
+        out += [f"**Variant perception:** {thesis.variant}", ""]
+    if thesis.rationale:
+        out += [f"**Rationale:** {thesis.rationale}", ""]
+    out.append(f"**Key variable:** {thesis.key_variable or 'N/A'}")
+    out.append(f"**Falsifier:** {thesis.falsifier or 'N/A'}")
+    out.append(f"**Horizon:** {thesis.horizon or 'N/A'}")
+    out.append("")
+    if thesis.scenarios:
+        out.append("| Scenario | Period | Driver | Math | Price | Return |")
+        out.append("| --- | --- | --- | --- | --- | --- |")
+        for s in thesis.scenarios:
+            math = f"{s.per_share_value:g} {s.metric} × {s.multiple:g} {s.multiple_basis}"
+            price = f"${s.implied_price:,.2f}" if s.implied_price is not None else "N/A"
+            ret = f"{s.implied_return_pct:+.0%}" if s.implied_return_pct is not None else "N/A"
+            driver = s.driver.replace("|", "\\|")   # free-text; keep it inside one table cell
+            out.append(f"| {s.name} | {s.period} | {driver} | {math} | {price} | {ret} |")
+        out.append("")
+    if thesis.incompleteness:
+        out += [f"_Alpha thesis incomplete: {', '.join(thesis.incompleteness)}._", ""]
+    return out
 
 
 def render(report: ResearchReport) -> str:
@@ -158,8 +189,12 @@ def render(report: ResearchReport) -> str:
     out.append("")
 
     out += ["## 1. Executive Summary", "", a.executive_summary, ""]
-    out += ["## 2. Company Overview", "", a.company_overview, ""]
-    out += ["## 3. Business Segments", "", a.business_segments, ""]
+    if report.alpha_thesis is not None:
+        out += _render_alpha(report.alpha_thesis)
+    else:
+        out += ["## 2. Alpha Thesis", "", "_Alpha thesis unavailable this run._", ""]
+    out += ["## 3. Company Overview", "", a.company_overview, ""]
+    out += ["## 4. Business Segments", "", a.business_segments, ""]
 
     ic = c.industry_context
     if ic and ic.peers:
@@ -173,7 +208,7 @@ def render(report: ResearchReport) -> str:
             out.append(f"| {p.ticker} | {p.role} | {rg} | {cx} | {ci} |")
         out += ["", f"_{ic.note}_", ""]
 
-    out += ["## 4. Recent Market Performance", ""]
+    out += ["## 5. Recent Market Performance", ""]
     if c.quote:
         out.append(f"- Price: {_fmt_money(c.quote.price)} {c.quote.currency or ''}".rstrip())
         out.append(f"- Market cap: {_fmt_money(c.quote.market_cap)}")
@@ -182,7 +217,7 @@ def render(report: ResearchReport) -> str:
         out.append("_No quote available._")
     out.append("")
 
-    out += ["## 5. Financial Snapshot", ""]
+    out += ["## 6. Financial Snapshot", ""]
     if c.fundamentals and c.fundamentals.facts:
         out.append("| Concept | Period | Value | Unit | Source |")
         out.append("| --- | --- | --- | --- | --- |")
@@ -208,7 +243,7 @@ def render(report: ResearchReport) -> str:
         out.append("")
     out += [a.financial_snapshot, ""]
 
-    out += ["## 6. Key Metrics", ""]
+    out += ["## 7. Key Metrics", ""]
     _derived = [m for m in c.derived_metrics if m.provenance.source != "Saturn (model)"]
     _forward = [m for m in c.derived_metrics if m.provenance.source == "Saturn (model)"]
     if _derived:
@@ -282,7 +317,7 @@ def render(report: ResearchReport) -> str:
         out.append("_No analyst consensus available._")
     out.append("")
 
-    out += ["## 7. Recent News and Catalysts", ""]
+    out += ["## 8. Recent News and Catalysts", ""]
     if c.news:
         for item in c.news:
             suffix = f" — {item.publisher}" if item.publisher else ""
@@ -296,14 +331,14 @@ def render(report: ResearchReport) -> str:
         out.append("_No recent news available._")
     out.append("")
 
-    out += ["## 8. Bull Thesis", "", d.bull_thesis, ""]
-    out += ["## 9. Bear Thesis", "", d.bear_thesis, ""]
-    out += ["## 10. Key Risks", "", a.key_risks, ""]
-    out += ["## 11. Valuation Discussion", "", a.valuation_discussion, ""]
-    out += ["## 12. Open Questions", "", a.open_questions, ""]
-    out += ["## 13. Final View", "", d.final_view, ""]
+    out += ["## 9. Bull Thesis", "", d.bull_thesis, ""]
+    out += ["## 10. Bear Thesis", "", d.bear_thesis, ""]
+    out += ["## 11. Key Risks", "", a.key_risks, ""]
+    out += ["## 12. Valuation Discussion", "", a.valuation_discussion, ""]
+    out += ["## 13. Open Questions", "", a.open_questions, ""]
+    out += ["## 14. Final View", "", d.final_view, ""]
 
-    out += ["## 14. Verification (Critic)", ""]
+    out += ["## 15. Verification (Critic)", ""]
     cr = report.critic_review
     if cr is None:
         out.append("_Verification unavailable._")
@@ -322,7 +357,7 @@ def render(report: ResearchReport) -> str:
             out.append(f"- ⚠️ **{f.category}** [{f.section}, {f.severity}]: \"{f.claim}\" — {f.evidence}")
     out.append("")
 
-    out += ["## 15. Macro Snapshot", ""]
+    out += ["## 16. Macro Snapshot", ""]
     if c.macro and c.macro.series:
         out.append("| Series | Latest | As of | Source |")
         out.append("| --- | --- | --- | --- |")
@@ -336,7 +371,7 @@ def render(report: ResearchReport) -> str:
         out.append("_No macro data available._")
         out.append("")
 
-    out += ["## 16. Material Events (SEC 8-K)", ""]
+    out += ["## 17. Material Events (SEC 8-K)", ""]
     if c.material_events:
         for ev in c.material_events:
             labels = ", ".join(ev.item_codes)
@@ -356,7 +391,7 @@ def render(report: ResearchReport) -> str:
         out.append("_No material events in the last 12 months._")
         out.append("")
 
-    out += ["## 17. Sources", ""]
+    out += ["## 18. Sources", ""]
     if report.sources:
         out += [f"- {s}" for s in report.sources]
     else:
@@ -364,7 +399,7 @@ def render(report: ResearchReport) -> str:
     out.append("")
 
     if c.gaps:
-        out += ["## 18. Data Gaps", ""]
+        out += ["## 19. Data Gaps", ""]
         out += [f"- **{g.source}**: {g.reason}" for g in c.gaps]
         out.append("")
 

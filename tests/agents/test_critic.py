@@ -268,3 +268,43 @@ def test_revise_no_actionable_findings_returns_none():
 def test_revise_soft_fails_to_none():
     assert revise(_analysis(), _debate(), _rev([_find("contradiction", "high", "bear_thesis")]),
                   _dossier(), _BadReviseLLM()) is None
+
+
+# ---- Alpha-framing: critic audits the alpha thesis ----
+
+from saturn.agents.critic import _critic_prompt
+from saturn.models import AlphaThesis, ExpectationAnchor, ScenarioLeg
+
+
+def _alpha():
+    return AlphaThesis(
+        anchor=ExpectationAnchor(source="consensus", text="fwd P/E 6.5x", confidence="medium"),
+        stance="above_expectations", variant="Market underrates HBM durability.", rationale="r",
+        confidence="medium", key_variable="HBM GM", falsifier="GM<60% in 2Q", horizon="12-18m",
+        scenarios=[ScenarioLeg(name="base", period="FY2027", driver="d", metric="EPS",
+                   metric_basis="adjusted", per_share_value=10.0, multiple=15.0, multiple_basis="P/E")],
+        provenance=Provenance(source="Saturn (synthesist)"))
+
+
+def test_critic_prompt_includes_alpha_and_new_category():
+    p = _critic_prompt(_analysis(), _debate(), "ctx", False, alpha=_alpha())
+    assert "unsupported_alpha_inference" in p
+    assert "Market underrates HBM durability." in p        # alpha thesis text is in the scan
+
+
+def test_critic_prompt_omits_alpha_when_none():
+    p = _critic_prompt(_analysis(), _debate(), "ctx", False, alpha=None)
+    assert "unsupported_alpha_inference" not in p
+
+
+class _AlphaInferenceLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        return ('{"claims_checked": 1, "summary": "s", "findings": ['
+                '{"claim": "margins reflect upfront recognition", "section": "alpha_thesis",'
+                ' "category": "unsupported_alpha_inference", "verdict": "unsupported",'
+                ' "evidence": "no contract-liability growth supports it", "severity": "high"}]}')
+
+
+def test_critique_keeps_unsupported_alpha_inference():
+    review = critique(_analysis(), _debate(), _dossier(), _AlphaInferenceLLM(), alpha=_alpha())
+    assert [f.category for f in review.findings] == ["unsupported_alpha_inference"]

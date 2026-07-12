@@ -113,21 +113,43 @@ CRITIC_SYSTEM = (
 )
 
 
-def _critic_prompt(analysis, debate, context: str, low_conf: bool) -> str:
+def _alpha_text(alpha) -> str:
+    """Flatten an AlphaThesis into text the Critic can scan. Omits computed fields
+    (implied_price, implied_return_pct) and self-assessed confidence — the Critic audits
+    the thesis inputs, not model-derived outputs."""
+    legs = "; ".join(
+        f"{s.name} {s.period}: {s.per_share_value:g} {s.metric} x {s.multiple:g} {s.multiple_basis} "
+        f"(driver: {s.driver})" for s in alpha.scenarios) or "none"
+    return (f"stance={alpha.stance} vs anchor [{alpha.anchor.source}: {alpha.anchor.text}]; "
+            f"variant: {alpha.variant}; rationale: {alpha.rationale}; "
+            f"key_variable: {alpha.key_variable}; falsifier: {alpha.falsifier}; "
+            f"horizon: {alpha.horizon}; scenarios: {legs}")
+
+
+def _critic_prompt(analysis, debate, context: str, low_conf: bool, alpha=None) -> str:
     sections = {**analysis.model_dump(), **debate.model_dump()}
+    if alpha is not None:
+        sections["alpha_thesis"] = _alpha_text(alpha)
     report_text = "\n\n".join(f"[{k}]\n{v}" for k, v in sections.items())
     note = ("\nNOTE: the reverse-DCF is flagged LOW CONFIDENCE. Report over_weighting ONLY if "
             "the thesis RELIES on its fair value / margin of safety as a PRIMARY argument. If the "
             "report explicitly dismisses or caveats it (e.g. 'diagnostic only', 'not a primary "
             "lens'), that is CORRECT handling — do NOT flag it.\n" if low_conf else "")
+    alpha_note = ("\nThe report includes an ALPHA THESIS. Also flag category "
+                  "unsupported_alpha_inference when: the variant is not connected to the anchor; a "
+                  "scenario driver has no support in the data; the falsifier is not an observable "
+                  "event with a time window; or a conclusion is stronger than its evidence (e.g. an "
+                  "accounting inference with no contract-liability / deferred-revenue / filing "
+                  "support).\n" if alpha is not None else "")
+    categories = ("[unsupported_number, contradiction, over_weighting, unverified_claim"
+                  + (", unsupported_alpha_inference]" if alpha is not None else "]"))
     return (
         "OUTPUT_SCHEMA=critic\n"
         "DRAFT REPORT (verify this prose):\n" + report_text + "\n\n"
-        "UNDERLYING DATA (provenance-tagged):\n" + context + "\n" + note +
+        "UNDERLYING DATA (provenance-tagged):\n" + context + "\n" + note + alpha_note +
         "\nReturn ONLY: {\"claims_checked\": int, \"summary\": str, \"findings\": "
         "[{\"claim\": str, \"section\": str, \"category\": str, \"verdict\": str, "
-        "\"evidence\": str, \"severity\": str}]}. category in "
-        "[unsupported_number, contradiction, over_weighting, unverified_claim]."
+        "\"evidence\": str, \"severity\": str}]}. category in " + categories + "."
     )
 
 
@@ -241,7 +263,7 @@ def revise(analysis, debate, review: CriticReview, dossier: CompanyDossier, llm,
         return None
 
 
-def critique(analysis, debate, dossier: CompanyDossier, llm, *, model: str | None = None) -> CriticReview | None:
+def critique(analysis, debate, dossier: CompanyDossier, llm, *, model: str | None = None, alpha=None) -> CriticReview | None:
     """Advisory verification. Resilient to imperfect LLM JSON: retries once on a parse
     failure, then validates findings individually. Returns None (soft-fail) only when both
     attempts fail to yield parseable JSON — never breaks the report."""
@@ -249,7 +271,8 @@ def critique(analysis, debate, dossier: CompanyDossier, llm, *, model: str | Non
     from saturn.workflows.equity_research import _company_context, _extract_json
     try:
         fwd = [m for m in dossier.derived_metrics if m.provenance.source == "Saturn (model)"]
-        prompt = _critic_prompt(analysis, debate, _company_context(dossier), is_reverse_dcf_low_confidence(fwd))
+        prompt = _critic_prompt(analysis, debate, _company_context(dossier),
+                                is_reverse_dcf_low_confidence(fwd), alpha)
         strict = "\n\nIMPORTANT: your previous reply was not valid JSON. Return ONLY a single, strictly valid JSON object; escape every quote and newline inside string values."
         for attempt in range(2):
             raw = llm.complete(CRITIC_SYSTEM, prompt if attempt == 0 else prompt + strict,
