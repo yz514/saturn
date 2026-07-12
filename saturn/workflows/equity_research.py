@@ -375,7 +375,7 @@ def run(
 ) -> ResearchReport:
     """Run the full pipeline and return an assembled ResearchReport."""
     call_model = None if mock else model_used
-    guidance = extract_guidance(company, llm, model=call_model)
+    guidance = extract_guidance(company, llm, model=call_model)   # +1 LLM call/report; None => trend fallback
     if guidance is not None:
         company.driver_model = compute_driver_model(
             company.fundamentals, company.quote, company.consensus,
@@ -383,6 +383,9 @@ def run(
         )
         if company.driver_model is not None:
             company.driver_model.growth_citation = guidance.quote
+            if guidance.period == "quarter":
+                company.driver_model.caveats.append(
+                    "growth annualized from a quarterly guide (ignores seasonality)")
     analysis = analyze(company, llm, model=call_model)
     deb = debate(company, llm, model=call_model)
     alpha = synthesize(analysis, deb, company, llm, model=call_model)

@@ -177,3 +177,24 @@ def test_run_falls_back_to_trend_without_guidance():
     r = run(_mock_dossier("NVDA"), MockLLMClient(), model_used="mock", mock=True)
     assert r.company.driver_model is not None
     assert r.company.driver_model.growth_source == "trend"
+
+
+class _QuarterGuidanceRunLLM:
+    """Grounded QUARTERLY revenue guidance; everything else minimal valid JSON."""
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        if "OUTPUT_SCHEMA=guidance" in prompt:
+            return '{"value": 18000000000, "period": "quarter", "quote": "We expect full-year revenue of approximately $70 billion."}'
+        if "OUTPUT_SCHEMA=analysis" in prompt:
+            return json.dumps({k: "o" for k in _ANALYSIS_KEYS})
+        if "OUTPUT_SCHEMA=debate" in prompt:
+            return json.dumps({"bull_thesis": "b", "bear_thesis": "be", "final_view": "f"})
+        if "OUTPUT_SCHEMA=critic" in prompt:
+            return json.dumps({"claims_checked": 0, "summary": "s", "findings": []})
+        return "{}"
+
+
+def test_run_quarter_guidance_adds_annualization_caveat():
+    r = run(_guidance_dossier(), _QuarterGuidanceRunLLM(), model_used="m", mock=False)
+    dm = r.company.driver_model
+    assert dm is not None and dm.growth_source == "guidance"
+    assert any("annualized from a quarterly" in c for c in dm.caveats)
