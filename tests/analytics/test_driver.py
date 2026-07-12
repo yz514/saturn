@@ -63,3 +63,14 @@ def test_driver_low_confidence_without_growth_history():
             ("NetIncomeLoss", "FY2025", 100.0), ("WeightedAverageSharesDiluted", "FY2025", 50.0)]
     dm = compute_driver_model(_facts(rows), _quote(), None)
     assert dm is not None and dm.trailing_revenue_growth == 0.0 and dm.low_confidence is True
+
+
+def test_driver_low_confidence_extreme_implied_growth():
+    # margin=0.1, shares=50, rev=1000 -> implied_g = (eps*50/0.1)/1000 - 1
+    # forward_eps=4.0 -> implied_g = (4.0*50/0.1)/1000 - 1 = 2000/1000 - 1 = 1.0 (>0.60) -> low confidence
+    cons = ConsensusSnapshot(forward_eps=4.0, provenance=Provenance(source="yfinance (estimate)"))
+    dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
+    assert dm is not None
+    assert abs(dm.consensus_implied_growth - 1.0) < 1e-9
+    assert dm.low_confidence is True
+    assert any("extreme" in c for c in dm.caveats)
