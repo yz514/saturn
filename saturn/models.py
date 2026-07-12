@@ -186,6 +186,24 @@ class AlphaThesis(BaseModel):
 ALPHA_PROSE_FIELDS = ("variant", "rationale", "key_variable", "falsifier", "horizon")
 
 
+class DriverModel(BaseModel):
+    """A deterministic trailing-trend forward-EPS bridge + consensus decomposition. The base
+    case is a MECHANICAL trailing-trend baseline (backward-looking), not a forward judgment."""
+    horizon: str = "NTM"
+    saturn_eps: float                                    # Saturn's trailing-trend forward EPS
+    trailing_revenue_growth: float                       # g (3y revenue CAGR)
+    trailing_net_margin: float                           # m (TTM net income / TTM revenue)
+    shares: float
+    consensus_eps: float | None = None
+    eps_gap: float | None = None                         # saturn_eps - consensus_eps
+    eps_gap_pct: float | None = None
+    consensus_implied_growth: float | None = None        # Lens A (hold margin)
+    consensus_implied_margin: float | None = None        # Lens B (hold growth)
+    low_confidence: bool = False
+    caveats: list[str] = Field(default_factory=list)
+    provenance: Provenance
+
+
 class CompanyDossier(BaseModel):
     """Rich, provenance-tagged evidence envelope consumed by the agents."""
 
@@ -207,6 +225,7 @@ class CompanyDossier(BaseModel):
     gaps: list[SourceGap] = Field(default_factory=list)
     generated_at: date
     industry_context: IndustryContext | None = None
+    driver_model: DriverModel | None = None
 
 
 class CompanyData(BaseModel):
