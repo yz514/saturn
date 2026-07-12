@@ -163,8 +163,10 @@ def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier
     if derived is not None:
         stance = derived
         stance_basis = f"base {base_return:+.0%} vs consensus target {target:+.0%}"
+    elif base_return is None:
+        stance_basis = "stance LLM-declared; no base-case return (no quote?)"
     else:
-        stance_basis = "vs model-implied anchor; no consensus target"
+        stance_basis = "stance LLM-declared vs model-implied anchor; no consensus target"
     thesis = AlphaThesis(
         anchor=anchor,
         stance=stance,

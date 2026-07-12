@@ -210,3 +210,14 @@ def test_synthesize_keeps_llm_stance_without_consensus_target():
     t = synthesize(_analysis(), _debate(), _dossier_with_quote(), _AlphaLLM(_valid_alpha_json()))
     assert t.stance == "above_consensus"                       # from the (updated) payload
     assert "no consensus target" in t.stance_basis
+
+
+def test_synthesize_in_line_consensus_stance():
+    from saturn.models import ConsensusSnapshot
+    # base leg 10x15=150 vs quote 100 -> +50%; target +45% -> within +/-10pp band -> in_line_consensus
+    d = _dossier(quote=Quote(price=100.0, provenance=Provenance(source="yfinance")),
+                 consensus=ConsensusSnapshot(target_mean=145.0, target_upside_pct=0.45,
+                                             provenance=Provenance(source="yfinance (estimate)")))
+    t = synthesize(_analysis(), _debate(), d, _AlphaLLM(_valid_alpha_json()))
+    assert t.stance == "in_line_consensus"
+    assert "base +50% vs consensus target +45%" in t.stance_basis
