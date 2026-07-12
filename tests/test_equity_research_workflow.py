@@ -139,3 +139,41 @@ def test_company_context_includes_driver_model():
 def test_synthesize_system_references_driver_gap():
     from saturn.agents.synthesist import SYNTHESIZE_SYSTEM
     assert "driver" in SYNTHESIZE_SYSTEM.lower()
+
+
+def _guidance_dossier():
+    from saturn.ingestion.dossier import _mock_dossier
+    from saturn.models import FilingSection, Provenance
+    d = _mock_dossier("MSFT")
+    d.filing_sections = list(d.filing_sections) + [FilingSection(
+        name="Earnings release", excerpt="We expect full-year revenue of approximately $70 billion.",
+        provenance=Provenance(source="SEC EDGAR"))]
+    return d
+
+
+class _GuidanceRunLLM:
+    """Returns grounded revenue guidance; everything else is minimal valid JSON."""
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        if "OUTPUT_SCHEMA=guidance" in prompt:
+            return '{"value": 70000000000, "period": "FY", "quote": "We expect full-year revenue of approximately $70 billion."}'
+        if "OUTPUT_SCHEMA=analysis" in prompt:
+            return json.dumps({k: "o" for k in _ANALYSIS_KEYS})
+        if "OUTPUT_SCHEMA=debate" in prompt:
+            return json.dumps({"bull_thesis": "b", "bear_thesis": "be", "final_view": "f"})
+        if "OUTPUT_SCHEMA=critic" in prompt:
+            return json.dumps({"claims_checked": 0, "summary": "s", "findings": []})
+        return "{}"
+
+
+def test_run_uses_guidance_growth_when_grounded():
+    r = run(_guidance_dossier(), _GuidanceRunLLM(), model_used="m", mock=False)
+    assert r.company.driver_model is not None
+    assert r.company.driver_model.growth_source == "guidance"
+    assert "70 billion" in r.company.driver_model.growth_citation
+
+
+def test_run_falls_back_to_trend_without_guidance():
+    # MockLLMClient returns "{}" for the guidance prompt -> no guidance -> trend model retained
+    r = run(_mock_dossier("NVDA"), MockLLMClient(), model_used="mock", mock=True)
+    assert r.company.driver_model is not None
+    assert r.company.driver_model.growth_source == "trend"

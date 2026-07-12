@@ -13,7 +13,9 @@ from saturn.analytics.forward import is_reverse_dcf_low_confidence
 from saturn.agents.critic import (
     _actionable, _alpha_actionable, _is_alpha_actionable, _score, critique, revise, revise_alpha,
 )
+from saturn.agents.guidance import extract_guidance
 from saturn.agents.synthesist import apply_alpha_corrections, synthesize
+from saturn.analytics.driver import compute_driver_model
 from saturn.llm.base import LLMClient
 from saturn.models import (
     AnalysisSections,
@@ -166,8 +168,11 @@ def _company_context(dossier: CompanyDossier) -> str:
     dm = dossier.driver_model
     if dm is not None:
         lines.append("\nDRIVER MODEL (Saturn trailing-trend forward EPS; mechanical baseline, not a forecast):")
+        _src = "management guidance" if dm.growth_source == "guidance" else "trailing trend"
         lines.append(f"- Saturn forward EPS ({dm.horizon}): {dm.saturn_eps:.2f} "
-                     f"(rev growth {dm.trailing_revenue_growth:+.1%}, net margin {dm.trailing_net_margin:.1%})")
+                     f"(rev growth {dm.trailing_revenue_growth:+.1%} [{_src}], net margin {dm.trailing_net_margin:.1%})")
+        if dm.growth_citation:
+            lines.append(f'  guidance: "{dm.growth_citation}"')
         if dm.consensus_eps is not None:
             gap = f"{dm.eps_gap:+.2f}" if dm.eps_gap is not None else "n/a"
             lines.append(f"- vs consensus EPS {dm.consensus_eps:.2f}: gap {gap}"
@@ -370,6 +375,14 @@ def run(
 ) -> ResearchReport:
     """Run the full pipeline and return an assembled ResearchReport."""
     call_model = None if mock else model_used
+    guidance = extract_guidance(company, llm, model=call_model)
+    if guidance is not None:
+        company.driver_model = compute_driver_model(
+            company.fundamentals, company.quote, company.consensus,
+            growth_override=guidance.implied_growth,
+        )
+        if company.driver_model is not None:
+            company.driver_model.growth_citation = guidance.quote
     analysis = analyze(company, llm, model=call_model)
     deb = debate(company, llm, model=call_model)
     alpha = synthesize(analysis, deb, company, llm, model=call_model)
