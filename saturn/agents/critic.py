@@ -140,7 +140,9 @@ def _critic_prompt(analysis, debate, context: str, low_conf: bool, alpha=None) -
                   "scenario driver has no support in the data; the falsifier is not an observable "
                   "event with a time window; or a conclusion is stronger than its evidence (e.g. an "
                   "accounting inference with no contract-liability / deferred-revenue / filing "
-                  "support).\n" if alpha is not None else "")
+                  "support). Also flag it when the alpha STANCE contradicts the Final View — e.g. "
+                  "stance below_consensus while the Final View reads as an aggressive buy.\n"
+                  if alpha is not None else "")
     categories = ("[unsupported_number, contradiction, over_weighting, unverified_claim"
                   + (", unsupported_alpha_inference]" if alpha is not None else "]"))
     return (

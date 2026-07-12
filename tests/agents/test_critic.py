@@ -308,3 +308,8 @@ class _AlphaInferenceLLM:
 def test_critique_keeps_unsupported_alpha_inference():
     review = critique(_analysis(), _debate(), _dossier(), _AlphaInferenceLLM(), alpha=_alpha())
     assert [f.category for f in review.findings] == ["unsupported_alpha_inference"]
+
+
+def test_critic_prompt_has_stance_vs_final_view_check():
+    p = _critic_prompt(_analysis(), _debate(), "ctx", False, alpha=_alpha())
+    assert "Final View" in p and "stance" in p.lower()

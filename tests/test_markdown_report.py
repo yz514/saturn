@@ -393,3 +393,12 @@ def test_render_alpha_escapes_pipe_in_driver():
     report.alpha_thesis = thesis
     md = render(report)
     assert "beat \\| re-rate" in md
+
+
+def test_render_alpha_shows_stance_basis():
+    report = _sample_report()
+    thesis = _alpha_thesis()
+    thesis.stance_basis = "base +11% vs consensus target +45%"
+    report.alpha_thesis = thesis
+    md = render(report)
+    assert "base +11% vs consensus target +45%" in md

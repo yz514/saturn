@@ -147,7 +147,8 @@ def _render_alpha(thesis) -> list[str]:
     a = thesis.anchor
     out.append(f"**Anchor** ({a.source}): {a.text}")
     out.append("")
-    out.append(f"**Stance:** {thesis.stance.replace('_', ' ')} · confidence {thesis.confidence}")
+    basis = f"  ({thesis.stance_basis})" if thesis.stance_basis else ""
+    out.append(f"**Stance:** {thesis.stance.replace('_', ' ')} · confidence {thesis.confidence}{basis}")
     out.append("")
     if thesis.variant:
         out += [f"**Variant perception:** {thesis.variant}", ""]
