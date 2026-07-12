@@ -181,8 +181,12 @@ def test_key_metrics_table_shows_newest_periods_when_unordered():
         DerivedMetric(name="net_margin", value=0.30, format="percent", fiscal_period="FY2023", formula="NetIncomeLoss / Revenues", provenance=prov),
     ]
     md = render(report)
-    assert "FY2024" in md and "FY2023" in md      # newest 2 kept
-    assert "FY2021" not in md and "FY2022" not in md  # older dropped
+    # Scope assertions to the Key Metrics section (§7) only — the mock fundamentals table
+    # legitimately contains older fiscal years (e.g. FY2021 Revenues) that should not
+    # pollute the Key Metrics table staleness check.
+    key_metrics_section = md.split("## 7. Key Metrics")[1].split("## 8.")[0]
+    assert "FY2024" in key_metrics_section and "FY2023" in key_metrics_section  # newest 2 kept
+    assert "FY2021" not in key_metrics_section and "FY2022" not in key_metrics_section  # older dropped
 
 
 def test_render_groups_financials_and_shows_events():
@@ -428,3 +432,36 @@ def test_render_no_banner_without_high_findings():
                   verdict="v", evidence="e", severity="low")],
         claims_checked=5, summary="s", provenance=Provenance(source="Saturn (critic)"))
     assert "Unresolved high-severity" not in render(report)
+
+
+def _driver_model(low=False):
+    from saturn.models import DriverModel, Provenance
+    return DriverModel(saturn_eps=2.15, trailing_revenue_growth=0.077, trailing_net_margin=0.10,
+                       shares=50.0, consensus_eps=2.50, eps_gap=-0.35, eps_gap_pct=-0.14,
+                       consensus_implied_growth=0.25, consensus_implied_margin=0.116,
+                       low_confidence=low, caveats=(["trailing net margin is non-positive"] if low else []),
+                       provenance=Provenance(source="Saturn (model)"))
+
+
+def test_render_driver_bridge_subsection():
+    report = _sample_report()
+    report.company.driver_model = _driver_model()
+    md = render(report)
+    assert "### Driver Bridge" in md
+    assert "$2.15" in md and "$2.50" in md            # Saturn EPS + consensus EPS
+    assert "+25.0%" in md or "+25%" in md              # Lens A implied growth
+    # subsection sits inside §2 (before §3)
+    assert md.index("### Driver Bridge") < md.index("## 3.")
+    assert md.index("## 2. Alpha Thesis") < md.index("### Driver Bridge")
+
+
+def test_render_driver_bridge_absent_when_none():
+    report = _sample_report()
+    report.company.driver_model = None
+    assert "### Driver Bridge" not in render(report)
+
+
+def test_render_driver_bridge_low_confidence_caveat():
+    report = _sample_report()
+    report.company.driver_model = _driver_model(low=True)
+    assert "Low confidence" in render(report) or "LOW CONFIDENCE" in render(report)

@@ -127,3 +127,15 @@ def test_run_alpha_self_repair_keeps_original_when_not_improved():
     r = run(_mock_dossier("JNJ"), _AlphaRepairLLM(improve=False), model_used="m", mock=False)
     assert r.alpha_thesis.rationale == "3-year CAGR near zero"      # revision rejected
     assert r.critic_review is None or r.critic_review.repaired is False
+
+
+def test_company_context_includes_driver_model():
+    from saturn.workflows.equity_research import _company_context
+    from saturn.ingestion.dossier import _mock_dossier
+    ctx = _company_context(_mock_dossier("NVDA"))
+    assert "DRIVER MODEL" in ctx and "Saturn forward EPS" in ctx
+
+
+def test_synthesize_system_references_driver_gap():
+    from saturn.agents.synthesist import SYNTHESIZE_SYSTEM
+    assert "driver" in SYNTHESIZE_SYSTEM.lower()

@@ -163,6 +163,22 @@ def _company_context(dossier: CompanyDossier) -> str:
                 "cycle-based lenses instead."
             )
 
+    dm = dossier.driver_model
+    if dm is not None:
+        lines.append("\nDRIVER MODEL (Saturn trailing-trend forward EPS; mechanical baseline, not a forecast):")
+        lines.append(f"- Saturn forward EPS ({dm.horizon}): {dm.saturn_eps:.2f} "
+                     f"(rev growth {dm.trailing_revenue_growth:+.1%}, net margin {dm.trailing_net_margin:.1%})")
+        if dm.consensus_eps is not None:
+            gap = f"{dm.eps_gap:+.2f}" if dm.eps_gap is not None else "n/a"
+            lines.append(f"- vs consensus EPS {dm.consensus_eps:.2f}: gap {gap}"
+                         + (f" ({dm.eps_gap_pct:+.0%})" if dm.eps_gap_pct is not None else ""))
+            if dm.consensus_implied_growth is not None:
+                lines.append(f"- consensus implies rev growth {dm.consensus_implied_growth:+.1%} (at trailing margin)")
+            if dm.consensus_implied_margin is not None:
+                lines.append(f"- consensus implies net margin {dm.consensus_implied_margin:.1%} (at trailing growth)")
+        if dm.low_confidence:
+            lines.append(f"  NOTE: driver model LOW CONFIDENCE — {'; '.join(dm.caveats)}")
+
     cons = dossier.consensus
     if cons is not None:
         lines.append("\nCONSENSUS / ANALYST EXPECTATIONS (yfinance estimate; may be unreliable):")

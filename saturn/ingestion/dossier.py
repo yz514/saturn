@@ -12,6 +12,7 @@ import logging
 from datetime import date
 from typing import Callable
 
+from saturn.analytics.driver import compute_driver_model
 from saturn.analytics.forward import compute_forward
 from saturn.analytics.metrics import compute_metrics
 from saturn.ingestion.consensus import fetch_consensus, validate_consensus, RawConsensus
@@ -61,7 +62,9 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
             facts=[
                 FinancialFact(concept="Revenues", value=60_900_000_000.0, unit="USD", fiscal_period="FY2024", provenance=prov_e),
                 FinancialFact(concept="NetIncomeLoss", value=29_760_000_000.0, unit="USD", fiscal_period="FY2024", provenance=prov_e),
+                FinancialFact(concept="WeightedAverageSharesDiluted", value=24_640_000_000.0, unit="shares", fiscal_period="FY2024", provenance=prov_e),
                 FinancialFact(concept="Revenues", value=26_970_000_000.0, unit="USD", fiscal_period="FY2023", provenance=prov_e),
+                FinancialFact(concept="Revenues", value=45_750_000_000.0, unit="USD", fiscal_period="FY2021", provenance=prov_e),
                 FinancialFact(concept="Revenues", value=30_040_000_000.0, unit="USD", fiscal_period="Q2 FY2025", provenance=prov_e),
             ]
         ),
@@ -96,11 +99,12 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
     )
     dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote) + compute_forward(dossier.fundamentals, dossier.quote)
     dossier.consensus = ConsensusSnapshot(
-        forward_eps=32.0, forward_pe=28.0, peg=1.5,
+        forward_eps=1.33, forward_pe=28.0, peg=1.5,
         target_mean=1000.0, target_high=1200.0, target_low=800.0, target_upside_pct=1000.0 / 900.0 - 1,
         rating="buy", n_analysts=40, last_eps_surprise_pct=0.05,
         provenance=Provenance(source="yfinance (estimate, mock)", as_of=date.today()),
     )
+    dossier.driver_model = compute_driver_model(dossier.fundamentals, dossier.quote, dossier.consensus)
     prov_ic = Provenance(source="SEC EDGAR (mock)")
     dossier.industry_context = IndustryContext(
         peers=[
@@ -236,4 +240,5 @@ def build_dossier(
         generated_at=date.today(),
     )
     dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote) + compute_forward(dossier.fundamentals, dossier.quote)
+    dossier.driver_model = compute_driver_model(dossier.fundamentals, dossier.quote, dossier.consensus)
     return dossier
