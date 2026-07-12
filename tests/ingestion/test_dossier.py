@@ -287,3 +287,10 @@ def test_build_dossier_attaches_forward_model_metrics(monkeypatch):
     )
     model = [m for m in d.derived_metrics if m.provenance.source == "Saturn (model)"]
     assert any(m.name == "implied_fcf_growth" for m in model)
+
+
+def test_mock_dossier_has_driver_model():
+    from saturn.ingestion.dossier import _mock_dossier
+    d = _mock_dossier("NVDA")
+    assert d.driver_model is not None
+    assert d.driver_model.saturn_eps is not None
