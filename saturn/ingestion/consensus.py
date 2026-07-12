@@ -36,6 +36,7 @@ class RawConsensus:
     n_analysts: int | None = None
     last_actual_eps: float | None = None
     last_estimate_eps: float | None = None
+    forward_revenue: float | None = None
 
 
 def _latest_fy_eps(fundamentals: Fundamentals | None) -> float | None:
@@ -195,4 +196,13 @@ def fetch_consensus(ticker: str) -> RawConsensus:
                 raw.last_estimate_eps = float(row["epsEstimate"].iloc[0])
     except Exception as exc:  # noqa: BLE001 - surprise is optional
         logger.debug("consensus earnings_history unavailable for %s: %s", ticker, exc)
+    # forward revenue estimate (best-effort; the analysis table is flaky across yfinance versions)
+    try:
+        est = handle.revenue_estimate
+        if est is not None and "avg" in getattr(est, "columns", []) and "+1y" in getattr(est, "index", []):
+            v = est.loc["+1y", "avg"]
+            if v is not None and float(v) == float(v):   # reject NaN
+                raw.forward_revenue = float(v)
+    except Exception as exc:  # noqa: BLE001 - revenue estimate is optional
+        logger.debug("consensus revenue_estimate unavailable for %s: %s", ticker, exc)
     return raw

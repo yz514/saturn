@@ -139,3 +139,33 @@ def test_fetch_consensus_maps_info_fields(monkeypatch):
     raw = cons.fetch_consensus("AAPL")
     assert raw.forward_eps == 9.6 and raw.forward_pe == 30.6 and raw.peg == 2.4
     assert raw.target_mean == 314.0 and raw.rating == "buy" and raw.n_analysts == 42
+
+
+def test_fetch_consensus_reads_forward_revenue(monkeypatch):
+    import pandas as pd
+    from saturn.ingestion import consensus as C
+    df = pd.DataFrame({"avg": [70e9]}, index=["+1y"])
+
+    class _T:
+        info = {"forwardEps": 5.0}
+        earnings_history = None
+        revenue_estimate = df
+
+    monkeypatch.setattr(C, "yf", type("YF", (), {"Ticker": staticmethod(lambda t: _T())}))
+    raw = C.fetch_consensus("X")
+    assert raw.forward_revenue == 70e9
+
+
+def test_fetch_consensus_forward_revenue_defensive(monkeypatch):
+    from saturn.ingestion import consensus as C
+
+    class _T:
+        info = {}
+        earnings_history = None
+
+        @property
+        def revenue_estimate(self):
+            raise RuntimeError("analysis endpoint down")
+
+    monkeypatch.setattr(C, "yf", type("YF", (), {"Ticker": staticmethod(lambda t: _T())}))
+    assert C.fetch_consensus("X").forward_revenue is None
