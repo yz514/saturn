@@ -50,7 +50,8 @@ _DEFS: list[MetricDef] = [
     _d("inventory_turnover", "Efficiency", "x", "CostOfRevenue / Inventory", "Cost of revenue vs inventory.", "Annual periods only (period flow vs. point-in-time stock)."),
     _d("capex_intensity", "Efficiency", "percent", "CapitalExpenditures / Revenues", "Capital spending as a share of revenue."),
     _d("days_sales_outstanding", "Efficiency", "ratio", "AccountsReceivableNetCurrent / Revenues * 365", "Average collection period (days), annual only."),
-    _d("rpo_to_revenue", "Efficiency", "x", "RemainingPerformanceObligation / Revenues", "Contracted backlog (RPO) as a multiple of annual revenue — revenue visibility.", "Annual only; GAAP RPO excludes non-binding long-term supply commitments (e.g. SCA minimums)."),
+    _d("rpo_to_ttm_revenue", "Efficiency", "x", "RemainingPerformanceObligation / Revenues (TTM)", "Contracted backlog (RPO) as a multiple of trailing-twelve-month revenue — revenue visibility.", "GAAP RPO excludes non-binding long-term supply commitments (e.g. SCA minimums)."),
+    _d("rpo_to_annualized_quarterly_revenue", "Efficiency", "x", "RemainingPerformanceObligation / (latest-quarter Revenues x 4)", "Contracted backlog (RPO) vs the latest quarter's annualized run-rate revenue — coverage vs current run-rate.", "GAAP RPO excludes non-binding long-term supply commitments; annualization assumes the latest quarter is representative."),
     # Cash
     _d("fcf", "Cash", "currency", "OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments", "Free cash flow."),
     _d("fcf_conversion", "Cash", "percent", "(OperatingCashFlow - CapitalExpenditures - FinanceLeasePrincipalPayments) / NetIncomeLoss", "How much net income converts to FCF (earnings quality)."),
