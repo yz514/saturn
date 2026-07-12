@@ -169,3 +169,36 @@ def test_fetch_consensus_forward_revenue_defensive(monkeypatch):
 
     monkeypatch.setattr(C, "yf", type("YF", (), {"Ticker": staticmethod(lambda t: _T())}))
     assert C.fetch_consensus("X").forward_revenue is None
+
+
+def _rev_fund(eps=4.5, rev=90e9, shares=10e9):
+    return Fundamentals(facts=[
+        FinancialFact(concept="EarningsPerShareDiluted", value=eps, unit="USD/shares", fiscal_period="FY2024", provenance=PROV),
+        FinancialFact(concept="Revenues", value=rev, unit="USD", fiscal_period="FY2024", provenance=PROV),
+        FinancialFact(concept="WeightedAverageSharesDiluted", value=shares, unit="shares", fiscal_period="FY2024", provenance=PROV)])
+
+
+def test_forward_revenue_accepted_when_consistent():
+    # forward_eps 5.0 x 10e9 shares / 100e9 rev = 0.5 margin (ok); 100/90-1 = +11% growth (ok)
+    raw = RawConsensus(forward_eps=5.0, forward_revenue=100e9)
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0))
+    assert c.forward_eps == 5.0 and c.forward_revenue == 100e9
+    assert not any("forward_revenue" in r for r in c.rejected)
+
+
+def test_forward_revenue_rejected_when_implausible():
+    # fr 40e9 -> implied margin 50e9/40e9 = 1.25 (>0.6) -> rejected
+    raw = RawConsensus(forward_eps=5.0, forward_revenue=40e9)
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0))
+    assert c.forward_revenue is None
+    assert any("forward_revenue" in r for r in c.rejected)
+
+
+def test_forward_revenue_no_baseline_rejected():
+    # no Revenues/shares facts -> cannot validate
+    raw = RawConsensus(forward_eps=5.0, forward_revenue=100e9)
+    fund = Fundamentals(facts=[FinancialFact(
+        concept="EarningsPerShareDiluted", value=4.5, unit="USD/shares", fiscal_period="FY2024", provenance=PROV)])
+    c = validate_consensus(raw, fund, _quote(50.0))
+    assert c.forward_revenue is None
+    assert any("no baseline" in r for r in c.rejected)

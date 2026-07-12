@@ -9,6 +9,7 @@ from datetime import date
 
 import yfinance as yf  # noqa: E402  (kept module-level so tests can patch saturn.ingestion.consensus.yf)
 
+from saturn.analytics.metrics import _annual_periods, _fact, _index, _ttm_or_fy
 from saturn.models import ConsensusSnapshot, Fundamentals, Provenance, Quote
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,8 @@ TARGET_PRICE_BAND = (0.2, 5.0)    # price targets as a multiple of current price
 MIN_ANALYSTS = 3
 MAX_SURPRISE = 2.0                 # |last EPS surprise|
 PE_CONSISTENCY_TOL = 0.05         # |forward_pe - price/forward_eps| / (price/forward_eps)
+REVENUE_MARGIN_CAP = 0.6          # implied consensus net margin must be below this
+REVENUE_GROWTH_BAND = (-0.5, 1.0)  # implied consensus revenue growth must be within this
 
 _SOURCE = "yfinance (estimate)"
 
@@ -124,6 +127,24 @@ def validate_consensus(
                 snap.forward_eps = fe
                 snap.forward_pe = raw.forward_pe if raw.forward_pe is not None else implied_pe
                 snap.peg = raw.peg
+
+    # --- forward revenue (consistency gate: implied margin & growth must be sane) ---
+    fr = raw.forward_revenue
+    if fr is not None:
+        idx = _index(fundamentals)
+        annual = _annual_periods(idx)
+        ttm = _ttm_or_fy(idx, "Revenues")
+        shares_fact = _fact(idx, "WeightedAverageSharesDiluted", annual[0]) if annual else None
+        if snap.forward_eps and ttm and ttm[0] > 0 and shares_fact and shares_fact.value > 0 and fr > 0:
+            m_c = snap.forward_eps * shares_fact.value / fr
+            g_c = fr / ttm[0] - 1
+            lo, hi = REVENUE_GROWTH_BAND
+            if 0 < m_c < REVENUE_MARGIN_CAP and lo <= g_c <= hi:
+                snap.forward_revenue = fr
+            else:
+                rejected.append(f"forward_revenue: rejected — implies margin {m_c:.0%} / growth {g_c:+.0%}")
+        else:
+            rejected.append("forward_revenue: no baseline (shares/revenue/forward_eps) to validate")
 
     # --- price targets ---
     tm, th, tl, na = raw.target_mean, raw.target_high, raw.target_low, raw.n_analysts
