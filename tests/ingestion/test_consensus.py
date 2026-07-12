@@ -202,3 +202,13 @@ def test_forward_revenue_no_baseline_rejected():
     c = validate_consensus(raw, fund, _quote(50.0))
     assert c.forward_revenue is None
     assert any("no baseline" in r for r in c.rejected)
+
+
+def test_forward_revenue_no_baseline_when_eps_rejected():
+    # forward_eps 100 vs trailing ~4.5 implies absurd growth -> EPS rejected -> snap.forward_eps None,
+    # so revenue can never be validated (no trustworthy EPS baseline).
+    raw = RawConsensus(forward_eps=100.0, forward_revenue=100e9)
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0))
+    assert c.forward_eps is None            # EPS rejected (out-of-band growth)
+    assert c.forward_revenue is None        # revenue not accepted without a validated EPS
+    assert any("no baseline" in r for r in c.rejected)
