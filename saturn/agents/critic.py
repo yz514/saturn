@@ -241,7 +241,10 @@ def revise(analysis, debate, review: CriticReview, dossier: CompanyDossier, llm,
     try:
         actionable = [f for f in review.findings if _is_actionable_finding(f)]
         sections = {**analysis.model_dump(), **debate.model_dump()}
-        affected = sorted({f.section for f in actionable if f.section in sections})
+        if any(f.category == "contradiction" for f in actionable):
+            affected = sorted(sections.keys())
+        else:
+            affected = sorted({f.section for f in actionable if f.section in sections})
         if not affected:
             return None
         problems = "\n".join(

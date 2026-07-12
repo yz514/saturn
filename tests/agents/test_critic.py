@@ -313,3 +313,33 @@ def test_critique_keeps_unsupported_alpha_inference():
 def test_critic_prompt_has_stance_vs_final_view_check():
     p = _critic_prompt(_analysis(), _debate(), "ctx", False, alpha=_alpha())
     assert "Final View" in p and "stance" in p.lower()
+
+
+class _CaptureReviseLLM:
+    """Records the section keys revise() offered for correction (parsed from the prompt)."""
+    def __init__(self):
+        self.offered_sections = None
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        import json, re
+        m = re.search(r'CURRENT SECTION TEXT \(JSON\):\n(\{.*?\})\n\n', prompt, re.S)
+        self.offered_sections = set(json.loads(m.group(1)).keys()) if m else set()
+        return '{"bear_thesis": "corrected"}'
+
+
+def test_revise_contradiction_widens_scope_to_all_sections():
+    # A contradiction finding NAMED on executive_summary must let revise edit OTHER sections too
+    # (the wrong value may live elsewhere — the MSFT RPO case).
+    from saturn.agents.critic import revise
+    review = _rev([_find("contradiction", "high", "executive_summary")])
+    llm = _CaptureReviseLLM()
+    revise(_analysis(), _debate(), review, _dossier(), llm)
+    assert "bear_thesis" in llm.offered_sections          # a non-named section was offered
+    assert "valuation_discussion" in llm.offered_sections
+
+
+def test_revise_non_contradiction_stays_scoped_to_named_section():
+    from saturn.agents.critic import revise
+    review = _rev([_find("unsupported_number", "high", "financial_snapshot")])
+    llm = _CaptureReviseLLM()
+    revise(_analysis(), _debate(), review, _dossier(), llm)
+    assert llm.offered_sections == {"financial_snapshot"}   # named-section-only scope preserved
