@@ -10,8 +10,10 @@ from typing import TypeVar
 from pydantic import ValidationError
 
 from saturn.analytics.forward import is_reverse_dcf_low_confidence
-from saturn.agents.critic import _actionable, _score, critique, revise
-from saturn.agents.synthesist import synthesize
+from saturn.agents.critic import (
+    _actionable, _alpha_actionable, _is_alpha_actionable, _score, critique, revise, revise_alpha,
+)
+from saturn.agents.synthesist import apply_alpha_corrections, synthesize
 from saturn.llm.base import LLMClient
 from saturn.models import (
     AnalysisSections,
@@ -372,6 +374,22 @@ def run(
             if r_review is not None and _score(r_review) < _score(review):
                 r_review.repaired = True
                 analysis, deb, review = r_analysis, r_deb, r_review
+
+    # Alpha-thesis self-repair: the section loop above never touches the structured AlphaThesis.
+    # When the Critic flags a high/medium finding on it, rewrite ONLY its prose fields and re-verify
+    # under the same keep-if-better gate (stance/scenarios/anchor stay deterministic).
+    if review is not None and alpha is not None and _alpha_actionable(review):
+        alpha_corr = revise_alpha(
+            alpha, company,
+            [f for f in review.findings if _is_alpha_actionable(f)],
+            llm, model=call_model,
+        )
+        if alpha_corr:
+            r_alpha = apply_alpha_corrections(alpha, alpha_corr)
+            r_review = critique(analysis, deb, company, llm, model=call_model, alpha=r_alpha)
+            if r_review is not None and _score(r_review) < _score(review):
+                r_review.repaired = True
+                alpha, review = r_alpha, r_review
 
     return ResearchReport(
         ticker=company.ticker,

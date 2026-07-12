@@ -77,3 +77,53 @@ def test_run_populates_alpha_thesis():
     assert r.alpha_thesis is not None and len(r.alpha_thesis.scenarios) == 3
     base = next(s for s in r.alpha_thesis.scenarios if s.name == "base")
     assert base.implied_price == 150.0            # 10 × 15 from the mock
+
+
+_ALPHA_JSON = json.dumps({
+    "stance": "below_consensus", "variant": "v", "rationale": "3-year CAGR near zero",
+    "confidence": "medium", "key_variable": "k", "falsifier": "GM<60% in 2Q", "horizon": "12m",
+    "scenarios": [
+        {"name": "bull", "period": "FY2027", "driver": "d", "metric": "EPS",
+         "metric_basis": "adjusted", "per_share_value": 13.0, "multiple": 18.0, "multiple_basis": "P/E"},
+        {"name": "base", "period": "FY2027", "driver": "d", "metric": "EPS",
+         "metric_basis": "adjusted", "per_share_value": 10.0, "multiple": 15.0, "multiple_basis": "P/E"},
+        {"name": "bear", "period": "FY2027", "driver": "d", "metric": "EPS",
+         "metric_basis": "adjusted", "per_share_value": 6.0, "multiple": 10.0, "multiple_basis": "P/E"}]})
+
+
+class _AlphaRepairLLM:
+    """analyze -> debate -> synth -> critic(1 high alpha finding) -> revise_alpha -> critic(clean)."""
+    def __init__(self, improve=True):
+        self.improve = improve
+        self.critic_calls = 0
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        if "OUTPUT_SCHEMA=analysis" in prompt:
+            return json.dumps({k: "orig" for k in _ANALYSIS_KEYS})
+        if "OUTPUT_SCHEMA=debate" in prompt:
+            return json.dumps({"bull_thesis": "b", "bear_thesis": "be", "final_view": "f"})
+        if "OUTPUT_SCHEMA=alpha" in prompt:
+            return _ALPHA_JSON
+        if "OUTPUT_SCHEMA=revise_alpha" in prompt:
+            return json.dumps({"rationale": "corrected rationale"})
+        if "OUTPUT_SCHEMA=critic" in prompt:
+            self.critic_calls += 1
+            finding = [{"claim": "3-year CAGR near zero", "section": "alpha_thesis",
+                        "category": "unsupported_alpha_inference", "verdict": "unsupported",
+                        "evidence": "data shows 3.9% 2-year", "severity": "high"}]
+            if self.critic_calls == 1:
+                return json.dumps({"claims_checked": 3, "summary": "x", "findings": finding})
+            return json.dumps({"claims_checked": 3, "summary": "ok",
+                               "findings": [] if self.improve else finding})
+        return "{}"
+
+
+def test_run_alpha_self_repair_corrects_and_flags():
+    r = run(_mock_dossier("JNJ"), _AlphaRepairLLM(improve=True), model_used="m", mock=False)
+    assert r.alpha_thesis is not None and r.alpha_thesis.rationale == "corrected rationale"
+    assert r.critic_review is not None and r.critic_review.repaired is True
+
+
+def test_run_alpha_self_repair_keeps_original_when_not_improved():
+    r = run(_mock_dossier("JNJ"), _AlphaRepairLLM(improve=False), model_used="m", mock=False)
+    assert r.alpha_thesis.rationale == "3-year CAGR near zero"      # revision rejected
+    assert r.critic_review is None or r.critic_review.repaired is False
