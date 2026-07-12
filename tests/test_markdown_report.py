@@ -181,8 +181,12 @@ def test_key_metrics_table_shows_newest_periods_when_unordered():
         DerivedMetric(name="net_margin", value=0.30, format="percent", fiscal_period="FY2023", formula="NetIncomeLoss / Revenues", provenance=prov),
     ]
     md = render(report)
-    assert "FY2024" in md and "FY2023" in md      # newest 2 kept
-    assert "FY2021" not in md and "FY2022" not in md  # older dropped
+    # Scope assertions to the Key Metrics section (§7) only — the mock fundamentals table
+    # legitimately contains older fiscal years (e.g. FY2021 Revenues) that should not
+    # pollute the Key Metrics table staleness check.
+    key_metrics_section = md.split("## 7. Key Metrics")[1].split("## 8.")[0]
+    assert "FY2024" in key_metrics_section and "FY2023" in key_metrics_section  # newest 2 kept
+    assert "FY2021" not in key_metrics_section and "FY2022" not in key_metrics_section  # older dropped
 
 
 def test_render_groups_financials_and_shows_events():
@@ -226,7 +230,6 @@ def test_recent_news_none_when_no_news_and_no_events():
 def test_render_forward_expectations_subtable():
     from saturn.models import DerivedMetric, MetricInput, Provenance
     report = _sample_report()
-    report.company.driver_model = None   # isolate from Driver Bridge section
     report.company.derived_metrics = [
         DerivedMetric(name="net_margin", value=0.25, format="percent", fiscal_period="FY2024",
                       formula="NetIncomeLoss / Revenues", provenance=Provenance(source="Saturn (derived)")),

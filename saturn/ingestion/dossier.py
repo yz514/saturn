@@ -64,6 +64,7 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
                 FinancialFact(concept="NetIncomeLoss", value=29_760_000_000.0, unit="USD", fiscal_period="FY2024", provenance=prov_e),
                 FinancialFact(concept="WeightedAverageSharesDiluted", value=24_640_000_000.0, unit="shares", fiscal_period="FY2024", provenance=prov_e),
                 FinancialFact(concept="Revenues", value=26_970_000_000.0, unit="USD", fiscal_period="FY2023", provenance=prov_e),
+                FinancialFact(concept="Revenues", value=45_750_000_000.0, unit="USD", fiscal_period="FY2021", provenance=prov_e),
                 FinancialFact(concept="Revenues", value=30_040_000_000.0, unit="USD", fiscal_period="Q2 FY2025", provenance=prov_e),
             ]
         ),
@@ -98,7 +99,7 @@ def _mock_dossier(ticker: str) -> CompanyDossier:
     )
     dossier.derived_metrics = compute_metrics(dossier.fundamentals, dossier.quote) + compute_forward(dossier.fundamentals, dossier.quote)
     dossier.consensus = ConsensusSnapshot(
-        forward_eps=32.0, forward_pe=28.0, peg=1.5,
+        forward_eps=1.33, forward_pe=28.0, peg=1.5,
         target_mean=1000.0, target_high=1200.0, target_low=800.0, target_upside_pct=1000.0 / 900.0 - 1,
         rating="buy", n_analysts=40, last_eps_surprise_pct=0.05,
         provenance=Provenance(source="yfinance (estimate, mock)", as_of=date.today()),
