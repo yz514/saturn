@@ -66,6 +66,7 @@ class ConsensusSnapshot(BaseModel):
     class: external estimate data, not as-reported and not a Saturn model output."""
 
     forward_eps: float | None = None
+    forward_revenue: float | None = None
     forward_pe: float | None = None
     peg: float | None = None
     target_mean: float | None = None
@@ -199,6 +200,11 @@ class DriverModel(BaseModel):
     eps_gap_pct: float | None = None
     consensus_implied_growth: float | None = None        # Lens A (hold margin)
     consensus_implied_margin: float | None = None        # Lens B (hold growth)
+    consensus_revenue: float | None = None
+    consensus_growth: float | None = None       # g_c = forward_revenue/TTM_rev - 1
+    consensus_margin: float | None = None        # m_c = consensus_eps * shares / forward_revenue
+    gap_from_growth: float | None = None         # EPS-gap growth effect
+    gap_from_margin: float | None = None         # EPS-gap margin effect
     low_confidence: bool = False
     caveats: list[str] = Field(default_factory=list)
     growth_source: str = "trend"     # "trend" | "guidance"
