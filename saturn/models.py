@@ -181,7 +181,8 @@ class AlphaThesis(BaseModel):
 
 
 # Alpha-thesis fields the LLM may rewrite during self-repair. Deterministic/computed fields
-# (stance, stance_basis, anchor, scenarios, incompleteness) are deliberately excluded.
+# (stance, stance_basis, anchor, scenarios, incompleteness) are deliberately excluded; so is
+# `confidence` — a prose repair should not be able to quietly change the conviction level.
 ALPHA_PROSE_FIELDS = ("variant", "rationale", "key_variable", "falsifier", "horizon")
 
 

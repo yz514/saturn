@@ -102,7 +102,7 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
     return gaps
 
 
-def apply_alpha_corrections(alpha, corrections: dict):
+def apply_alpha_corrections(alpha: AlphaThesis, corrections: dict) -> AlphaThesis:
     """Splice corrected prose fields into the alpha thesis and recompute completeness. Only
     ALPHA_PROSE_FIELDS are updated; stance/stance_basis/anchor/scenarios are carried over verbatim
     by model_copy."""
