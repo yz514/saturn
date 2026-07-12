@@ -482,3 +482,31 @@ def test_render_driver_bridge_trend_source_label():
     report = _sample_report()
     report.company.driver_model = _driver_model()   # growth_source defaults to "trend"
     assert "(trailing trend)" in render(report)
+
+
+def _driver_model_waterfall():
+    from saturn.models import DriverModel, Provenance
+    return DriverModel(saturn_eps=18.86, trailing_revenue_growth=0.124, trailing_net_margin=0.393,
+                       shares=7.4e9, consensus_eps=19.36, eps_gap=-0.50, eps_gap_pct=-0.026,
+                       consensus_implied_growth=0.154, consensus_implied_margin=0.404,
+                       consensus_revenue=290e9, consensus_growth=0.154, consensus_margin=0.404,
+                       gap_from_growth=0.35, gap_from_margin=0.15,
+                       provenance=Provenance(source="Saturn (model)"))
+
+
+def test_render_driver_bridge_waterfall_attribution():
+    report = _sample_report()
+    report.company.driver_model = _driver_model_waterfall()
+    md = render(report)
+    assert "Gap attribution" in md
+    assert "+0.35 EPS from growth" in md
+    assert "cons +15.4% vs +12.4%" in md
+    assert "Consensus implies" not in md          # two-lens lines are replaced
+
+
+def test_render_driver_bridge_two_lens_when_no_waterfall():
+    report = _sample_report()
+    report.company.driver_model = _driver_model()   # no consensus_revenue -> two-lens
+    md = render(report)
+    assert "Consensus implies" in md
+    assert "Gap attribution" not in md

@@ -201,10 +201,17 @@ def _render_driver_bridge(dm) -> list[str]:
         gap = f"${dm.eps_gap:+,.2f}" if dm.eps_gap is not None else "N/A"
         pct = f" ({dm.eps_gap_pct:+.0%})" if dm.eps_gap_pct is not None else ""
         out.append(f"- **vs consensus EPS ${dm.consensus_eps:,.2f}:** gap {gap}{pct}")
-        if dm.consensus_implied_growth is not None:
-            out.append(f"- Consensus implies **rev growth {dm.consensus_implied_growth:+.1%}** (at trailing margin)")
-        if dm.consensus_implied_margin is not None:
-            out.append(f"- …or **net margin {dm.consensus_implied_margin:.1%}** (at trailing growth)")
+        if dm.consensus_revenue is not None:
+            out.append(
+                f"- **Gap attribution:** {dm.gap_from_growth:+.2f} EPS from growth "
+                f"(cons {dm.consensus_growth:+.1%} vs {dm.trailing_revenue_growth:+.1%}) · "
+                f"{dm.gap_from_margin:+.2f} from margin "
+                f"(cons {dm.consensus_margin:.1%} vs {dm.trailing_net_margin:.1%})")
+        else:
+            if dm.consensus_implied_growth is not None:
+                out.append(f"- Consensus implies **rev growth {dm.consensus_implied_growth:+.1%}** (at trailing margin)")
+            if dm.consensus_implied_margin is not None:
+                out.append(f"- …or **net margin {dm.consensus_implied_margin:.1%}** (at trailing growth)")
     if dm.growth_citation:
         out.append(f'- _Guidance: "{dm.growth_citation}"_')
     if dm.caveats:
