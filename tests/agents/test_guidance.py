@@ -58,3 +58,17 @@ def test_extract_guidance_absurd_growth_rejected():
     # value 700B vs 60B TTM -> +1066% -> out of bounds
     payload = '{"value": 700000000000, "period": "FY", "quote": "We expect full-year revenue of approximately $70 billion."}'
     assert extract_guidance(_dossier(), _GuidanceLLM(payload)) is None
+
+
+def test_extract_guidance_no_filing_sections_none():
+    from saturn.models import CompanyDossier, Fundamentals, FinancialFact
+    d = CompanyDossier(ticker="X", name="X", generated_at=date(2026, 7, 12),
+                       fundamentals=Fundamentals(facts=[FinancialFact(
+                           concept="Revenues", value=60e9, unit="USD", fiscal_period="FY2025", provenance=PROV)]),
+                       filing_sections=[])
+    assert extract_guidance(d, _GuidanceLLM(_fy_payload())) is None
+
+
+def test_extract_guidance_non_numeric_value_none():
+    payload = '{"value": "$70 billion", "period": "FY", "quote": "We expect full-year revenue of approximately $70 billion."}'
+    assert extract_guidance(_dossier(), _GuidanceLLM(payload)) is None

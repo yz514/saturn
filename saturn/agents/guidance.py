@@ -14,6 +14,7 @@ from saturn.models import Guidance, Provenance
 
 logger = logging.getLogger(__name__)
 _MAX_OUTPUT_TOKENS = 2048
+_MAX_FILING_CHARS = 8000   # keep the prompt within the context budget
 _GROWTH_BOUNDS = (-0.9, 2.0)   # discard an implied growth outside this (mis-scaled figure)
 
 GUIDANCE_SYSTEM = (
@@ -37,7 +38,7 @@ def extract_guidance(dossier, llm, *, model: str | None = None) -> Guidance | No
             return None
         prompt = (
             "OUTPUT_SCHEMA=guidance\n"
-            "FILING TEXT (earnings release / 8-K):\n" + source[:8000] + "\n\n"
+            "FILING TEXT (earnings release / 8-K):\n" + source[:_MAX_FILING_CHARS] + "\n\n"
             "Return ONLY: {\"value\": number (guided revenue, same scale as reported revenue, e.g. "
             "50000000000 for $50B), \"period\": \"FY\" or \"quarter\", \"quote\": \"verbatim sentence\"} "
             "or {} if no explicit forward revenue guidance."
@@ -55,7 +56,12 @@ def extract_guidance(dossier, llm, *, model: str | None = None) -> Guidance | No
         if not isinstance(data, dict) or "value" not in data or "quote" not in data:
             return None
 
-        value = float(data["value"])
+        try:
+            value = float(data["value"])
+        except (TypeError, ValueError):
+            logger.info("guidance discarded (non-numeric value %r) for %s",
+                        data.get("value"), getattr(dossier, "ticker", "?"))
+            return None
         quote = str(data.get("quote") or "")
         period = "quarter" if str(data.get("period", "FY")).lower().startswith("q") else "FY"
 
