@@ -201,6 +201,19 @@ class DriverModel(BaseModel):
     consensus_implied_margin: float | None = None        # Lens B (hold growth)
     low_confidence: bool = False
     caveats: list[str] = Field(default_factory=list)
+    growth_source: str = "trend"     # "trend" | "guidance"
+    growth_citation: str = ""        # verbatim guidance quote when growth_source == "guidance"
+    provenance: Provenance
+
+
+class Guidance(BaseModel):
+    """Management's disclosed forward revenue guidance, extracted from filing text and grounded
+    (the quote must appear verbatim in the source). Feeds the driver model's growth input."""
+    metric: str = "revenue"
+    period: str                      # "FY" | "quarter"
+    value: float                     # guided revenue figure (absolute, reported-Revenues scale)
+    implied_growth: float            # computed vs TTM revenue
+    quote: str                       # verbatim sentence from the filing
     provenance: Provenance
 
 
