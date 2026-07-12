@@ -279,7 +279,7 @@ from saturn.models import AlphaThesis, ExpectationAnchor, ScenarioLeg
 def _alpha():
     return AlphaThesis(
         anchor=ExpectationAnchor(source="consensus", text="fwd P/E 6.5x", confidence="medium"),
-        stance="above_expectations", variant="Market underrates HBM durability.", rationale="r",
+        stance="above_consensus", variant="Market underrates HBM durability.", rationale="r",
         confidence="medium", key_variable="HBM GM", falsifier="GM<60% in 2Q", horizon="12-18m",
         scenarios=[ScenarioLeg(name="base", period="FY2027", driver="d", metric="EPS",
                    metric_basis="adjusted", per_share_value=10.0, multiple=15.0, multiple_basis="P/E")],

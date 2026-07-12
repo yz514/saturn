@@ -351,7 +351,7 @@ def _alpha_thesis(incomplete=False):
     from saturn.models import AlphaThesis, ExpectationAnchor, ScenarioLeg, Provenance
     return AlphaThesis(
         anchor=ExpectationAnchor(source="consensus", text="forward P/E 6.5x", confidence="medium"),
-        stance="above_expectations", variant="Market underrates HBM margin durability.",
+        stance="above_consensus", variant="Market underrates HBM margin durability.",
         rationale="SCAs lock demand.", confidence="medium", key_variable="HBM gross margin",
         falsifier="GM below 60% within 2 quarters", horizon="12-18 months",
         scenarios=[ScenarioLeg(name="base", period="FY2027", driver="normalizing", metric="EPS",
