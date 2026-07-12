@@ -180,6 +180,12 @@ class AlphaThesis(BaseModel):
     provenance: Provenance
 
 
+# Alpha-thesis fields the LLM may rewrite during self-repair. Deterministic/computed fields
+# (stance, stance_basis, anchor, scenarios, incompleteness) are deliberately excluded; so is
+# `confidence` — a prose repair should not be able to quietly change the conviction level.
+ALPHA_PROSE_FIELDS = ("variant", "rationale", "key_variable", "falsifier", "horizon")
+
+
 class CompanyDossier(BaseModel):
     """Rich, provenance-tagged evidence envelope consumed by the agents."""
 

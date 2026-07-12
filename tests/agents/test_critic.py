@@ -343,3 +343,39 @@ def test_revise_non_contradiction_stays_scoped_to_named_section():
     llm = _CaptureReviseLLM()
     revise(_analysis(), _debate(), review, _dossier(), llm)
     assert llm.offered_sections == {"financial_snapshot"}   # named-section-only scope preserved
+
+
+def test_is_alpha_actionable_matrix():
+    from saturn.agents.critic import _is_alpha_actionable, _alpha_actionable
+    assert _is_alpha_actionable(_find("unsupported_alpha_inference", "high", "alpha_thesis")) is True
+    assert _is_alpha_actionable(_find("contradiction", "medium", "alpha_thesis / final_view")) is True
+    assert _is_alpha_actionable(_find("unsupported_alpha_inference", "low", "alpha_thesis")) is False
+    assert _is_alpha_actionable(_find("contradiction", "high", "bull_thesis")) is False
+    assert _alpha_actionable(_rev([_find("unsupported_alpha_inference", "high", "alpha_thesis")])) is True
+    assert _alpha_actionable(_rev([_find("contradiction", "high", "bull_thesis")])) is False
+
+
+class _AlphaReviseLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        assert "OUTPUT_SCHEMA=revise_alpha" in prompt
+        # a corrected rationale PLUS stray derived keys that MUST be dropped
+        return ('{"rationale": "corrected: ~3.9% 2-year FCF CAGR", '
+                '"stance": "above_consensus", "scenarios": []}')
+
+
+class _BadAlphaReviseLLM:
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        return "not json"
+
+
+def test_revise_alpha_returns_prose_only():
+    from saturn.agents.critic import revise_alpha
+    findings = [_find("unsupported_alpha_inference", "high", "alpha_thesis")]
+    corr = revise_alpha(_alpha(), _dossier(), findings, _AlphaReviseLLM())
+    assert corr == {"rationale": "corrected: ~3.9% 2-year FCF CAGR"}   # stance/scenarios dropped
+
+
+def test_revise_alpha_soft_fails_to_none():
+    from saturn.agents.critic import revise_alpha
+    findings = [_find("unsupported_alpha_inference", "high", "alpha_thesis")]
+    assert revise_alpha(_alpha(), _dossier(), findings, _BadAlphaReviseLLM()) is None

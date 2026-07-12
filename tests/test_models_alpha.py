@@ -26,3 +26,13 @@ def test_scenario_leg_rejects_bad_literal():
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         _leg(metric="revenue")   # not in [EPS, FCF/share, sales/share]
+
+
+def test_alpha_prose_fields_excludes_derived():
+    from saturn.models import ALPHA_PROSE_FIELDS
+    # derived/computed fields must never be LLM-rewritable
+    assert "stance" not in ALPHA_PROSE_FIELDS and "scenarios" not in ALPHA_PROSE_FIELDS
+    assert "stance_basis" not in ALPHA_PROSE_FIELDS and "anchor" not in ALPHA_PROSE_FIELDS
+    # the prose fields are present
+    for f in ("variant", "rationale", "key_variable", "falsifier", "horizon"):
+        assert f in ALPHA_PROSE_FIELDS

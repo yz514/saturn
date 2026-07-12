@@ -216,6 +216,16 @@ def _actionable(review: CriticReview) -> bool:
     return any(_is_actionable_finding(f) for f in review.findings)
 
 
+def _is_alpha_actionable(f) -> bool:
+    """A high/medium finding on the alpha thesis — repairable by rewriting its prose fields.
+    (Kept separate from _is_actionable_finding: alpha findings do not trigger section revise.)"""
+    return f.severity in ("high", "medium") and (f.section or "").startswith("alpha_thesis")
+
+
+def _alpha_actionable(review: CriticReview) -> bool:
+    return any(_is_alpha_actionable(f) for f in review.findings)
+
+
 def _score(review: CriticReview) -> int:
     """Severity-weighted issue score (high=3, medium=2, low=1); lower is better."""
     return sum(_SEVERITY_WEIGHT.get(f.severity, 1) for f in review.findings)
@@ -265,6 +275,44 @@ def revise(analysis, debate, review: CriticReview, dossier: CompanyDossier, llm,
         return out or None
     except Exception as exc:  # noqa: BLE001 - revise is best-effort; keep the original report
         logger.warning("critic revise unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)
+        return None
+
+
+REVISE_ALPHA_SYSTEM = (
+    "You are correcting the ALPHA THESIS of an equity research report. You are given specific "
+    "VERIFIED problems on the thesis (each with the underlying data as evidence) and the current "
+    "text of its prose fields. Rewrite ONLY those prose fields to fix exactly these problems using "
+    "the cited data. Do NOT change the stance, do NOT change the scenario numbers or assumptions, "
+    "and do NOT invent figures — preserve everything else in each field. Respond with ONLY a JSON "
+    "object mapping each affected prose-field name to its corrected full text (plain strings), no "
+    "prose, no code fences."
+)
+
+
+def revise_alpha(alpha, dossier: CompanyDossier, findings, llm, *, model: str | None = None) -> dict | None:
+    """Return {prose_field: corrected_text} for the alpha thesis, or None (soft-fail). Only the
+    ALPHA_PROSE_FIELDS are rewritten; any stance/scenarios/anchor key the model returns is dropped."""
+    from saturn.workflows.equity_research import _company_context, _extract_json
+    from saturn.models import ALPHA_PROSE_FIELDS
+    try:
+        problems = "\n".join(
+            f'- ({f.category}, {f.severity}): "{f.claim}" -- {f.evidence}' for f in findings
+        )
+        current = {k: getattr(alpha, k) for k in ALPHA_PROSE_FIELDS}
+        prompt = (
+            "OUTPUT_SCHEMA=revise_alpha\n"
+            "VERIFIED PROBLEMS to fix:\n" + problems + "\n\n"
+            "CURRENT ALPHA PROSE (JSON):\n" + json.dumps(current) + "\n\n"
+            "UNDERLYING DATA (provenance-tagged):\n" + _company_context(dossier) + "\n\n"
+            f"Return ONLY a JSON object mapping affected fields (subset of {list(ALPHA_PROSE_FIELDS)}) "
+            "to corrected full text. Do NOT include stance, scenarios, or anchor."
+        )
+        raw = llm.complete(REVISE_ALPHA_SYSTEM, prompt, model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+        data = json.loads(_extract_json(raw))
+        out = {k: str(v) for k, v in data.items() if k in ALPHA_PROSE_FIELDS and isinstance(v, str)}
+        return out or None
+    except Exception as exc:  # noqa: BLE001 - best-effort; keep the original alpha thesis
+        logger.warning("critic revise_alpha unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)
         return None
 
 

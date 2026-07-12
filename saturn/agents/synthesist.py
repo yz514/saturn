@@ -102,6 +102,16 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
     return gaps
 
 
+def apply_alpha_corrections(alpha: AlphaThesis, corrections: dict) -> AlphaThesis:
+    """Splice corrected prose fields into the alpha thesis and recompute completeness. Only
+    ALPHA_PROSE_FIELDS are updated; stance/stance_basis/anchor/scenarios are carried over verbatim
+    by model_copy."""
+    from saturn.models import ALPHA_PROSE_FIELDS
+    updated = alpha.model_copy(update={k: v for k, v in corrections.items() if k in ALPHA_PROSE_FIELDS})
+    updated.incompleteness = alpha_completeness(updated)
+    return updated
+
+
 SYNTHESIZE_SYSTEM = (
     "You are a portfolio manager turning an analyst's memo into a tradeable view. You are given "
     "the market-expectation ANCHOR, the draft report, and the underlying data. Write the RATIONALE "

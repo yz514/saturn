@@ -233,3 +233,21 @@ def test_synthesize_system_frames_rationale_and_forbids_verdict():
     assert "the system derives" in s
     # the old verdict-assertion clause is gone
     assert "state whether the view is above / in line with / below the anchor and why" not in s
+
+
+def test_apply_alpha_corrections_splices_prose_and_preserves_derived():
+    from saturn.agents.synthesist import apply_alpha_corrections
+    orig = _complete_thesis()
+    updated = apply_alpha_corrections(orig, {"rationale": "new rationale",
+                                             "stance": "unclear", "scenarios": []})
+    assert updated.rationale == "new rationale"        # prose spliced
+    assert updated.stance == orig.stance               # derived stance untouched
+    assert updated.scenarios == orig.scenarios         # scenarios untouched
+    assert updated.anchor == orig.anchor               # anchor untouched
+
+
+def test_apply_alpha_corrections_recomputes_incompleteness():
+    from saturn.agents.synthesist import apply_alpha_corrections
+    # emptying the falsifier should make the completeness gate flag it
+    updated = apply_alpha_corrections(_complete_thesis(), {"falsifier": ""})
+    assert any("falsifier" in g for g in updated.incompleteness)
