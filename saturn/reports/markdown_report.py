@@ -194,8 +194,9 @@ def _render_driver_bridge(dm) -> list[str]:
     if dm is None:
         return []
     out = [f"### Driver Bridge{' (Low confidence)' if dm.low_confidence else ''}", ""]
+    src = " (per management guidance)" if dm.growth_source == "guidance" else " (trailing trend)"
     out.append(f"- **Saturn forward EPS ({dm.horizon}):** ${dm.saturn_eps:,.2f} "
-               f"(rev growth {dm.trailing_revenue_growth:+.1%}, net margin {dm.trailing_net_margin:.1%})")
+               f"(rev growth {dm.trailing_revenue_growth:+.1%}{src}, net margin {dm.trailing_net_margin:.1%})")
     if dm.consensus_eps is not None:
         gap = f"${dm.eps_gap:+,.2f}" if dm.eps_gap is not None else "N/A"
         pct = f" ({dm.eps_gap_pct:+.0%})" if dm.eps_gap_pct is not None else ""
@@ -204,6 +205,8 @@ def _render_driver_bridge(dm) -> list[str]:
             out.append(f"- Consensus implies **rev growth {dm.consensus_implied_growth:+.1%}** (at trailing margin)")
         if dm.consensus_implied_margin is not None:
             out.append(f"- …or **net margin {dm.consensus_implied_margin:.1%}** (at trailing growth)")
+    if dm.growth_citation:
+        out.append(f'- _Guidance: "{dm.growth_citation}"_')
     if dm.caveats:
         out.append(f"- _{'; '.join(dm.caveats)}_")
     out.append("")

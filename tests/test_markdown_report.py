@@ -465,3 +465,20 @@ def test_render_driver_bridge_low_confidence_caveat():
     report = _sample_report()
     report.company.driver_model = _driver_model(low=True)
     assert "Low confidence" in render(report) or "LOW CONFIDENCE" in render(report)
+
+
+def test_render_driver_bridge_guidance_source_and_citation():
+    report = _sample_report()
+    dm = _driver_model()
+    dm.growth_source = "guidance"
+    dm.growth_citation = "We expect full-year revenue of approximately $70 billion."
+    report.company.driver_model = dm
+    md = render(report)
+    assert "(per management guidance)" in md
+    assert "We expect full-year revenue of approximately $70 billion." in md
+
+
+def test_render_driver_bridge_trend_source_label():
+    report = _sample_report()
+    report.company.driver_model = _driver_model()   # growth_source defaults to "trend"
+    assert "(trailing trend)" in render(report)
