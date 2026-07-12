@@ -226,6 +226,7 @@ def test_recent_news_none_when_no_news_and_no_events():
 def test_render_forward_expectations_subtable():
     from saturn.models import DerivedMetric, MetricInput, Provenance
     report = _sample_report()
+    report.company.driver_model = None   # isolate from Driver Bridge section
     report.company.derived_metrics = [
         DerivedMetric(name="net_margin", value=0.25, format="percent", fiscal_period="FY2024",
                       formula="NetIncomeLoss / Revenues", provenance=Provenance(source="Saturn (derived)")),
@@ -428,3 +429,36 @@ def test_render_no_banner_without_high_findings():
                   verdict="v", evidence="e", severity="low")],
         claims_checked=5, summary="s", provenance=Provenance(source="Saturn (critic)"))
     assert "Unresolved high-severity" not in render(report)
+
+
+def _driver_model(low=False):
+    from saturn.models import DriverModel, Provenance
+    return DriverModel(saturn_eps=2.15, trailing_revenue_growth=0.077, trailing_net_margin=0.10,
+                       shares=50.0, consensus_eps=2.50, eps_gap=-0.35, eps_gap_pct=-0.14,
+                       consensus_implied_growth=0.25, consensus_implied_margin=0.116,
+                       low_confidence=low, caveats=(["trailing net margin is non-positive"] if low else []),
+                       provenance=Provenance(source="Saturn (model)"))
+
+
+def test_render_driver_bridge_subsection():
+    report = _sample_report()
+    report.company.driver_model = _driver_model()
+    md = render(report)
+    assert "### Driver Bridge" in md
+    assert "$2.15" in md and "$2.50" in md            # Saturn EPS + consensus EPS
+    assert "+25.0%" in md or "+25%" in md              # Lens A implied growth
+    # subsection sits inside §2 (before §3)
+    assert md.index("### Driver Bridge") < md.index("## 3.")
+    assert md.index("## 2. Alpha Thesis") < md.index("### Driver Bridge")
+
+
+def test_render_driver_bridge_absent_when_none():
+    report = _sample_report()
+    report.company.driver_model = None
+    assert "### Driver Bridge" not in render(report)
+
+
+def test_render_driver_bridge_low_confidence_caveat():
+    report = _sample_report()
+    report.company.driver_model = _driver_model(low=True)
+    assert "Low confidence" in render(report) or "LOW CONFIDENCE" in render(report)

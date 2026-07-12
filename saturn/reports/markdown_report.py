@@ -189,6 +189,27 @@ def _render_high_severity_banner(review) -> list[str]:
     return out
 
 
+def _render_driver_bridge(dm) -> list[str]:
+    """Render Saturn's trailing-trend forward-EPS bridge as a §2 subsection. Empty when None."""
+    if dm is None:
+        return []
+    out = [f"### Driver Bridge{' (Low confidence)' if dm.low_confidence else ''}", ""]
+    out.append(f"- **Saturn forward EPS ({dm.horizon}):** ${dm.saturn_eps:,.2f} "
+               f"(rev growth {dm.trailing_revenue_growth:+.1%}, net margin {dm.trailing_net_margin:.1%})")
+    if dm.consensus_eps is not None:
+        gap = f"${dm.eps_gap:+,.2f}" if dm.eps_gap is not None else "N/A"
+        pct = f" ({dm.eps_gap_pct:+.0%})" if dm.eps_gap_pct is not None else ""
+        out.append(f"- **vs consensus EPS ${dm.consensus_eps:,.2f}:** gap {gap}{pct}")
+        if dm.consensus_implied_growth is not None:
+            out.append(f"- Consensus implies **rev growth {dm.consensus_implied_growth:+.1%}** (at trailing margin)")
+        if dm.consensus_implied_margin is not None:
+            out.append(f"- …or **net margin {dm.consensus_implied_margin:.1%}** (at trailing growth)")
+    if dm.caveats:
+        out.append(f"- _{'; '.join(dm.caveats)}_")
+    out.append("")
+    return out
+
+
 def render(report: ResearchReport) -> str:
     """Return the markdown for a research report (pure function)."""
     c = report.company
@@ -211,6 +232,7 @@ def render(report: ResearchReport) -> str:
         out += _render_alpha(report.alpha_thesis)
     else:
         out += ["## 2. Alpha Thesis", "", "_Alpha thesis unavailable this run._", ""]
+    out += _render_driver_bridge(report.company.driver_model)
     out += ["## 3. Company Overview", "", a.company_overview, ""]
     out += ["## 4. Business Segments", "", a.business_segments, ""]
 
