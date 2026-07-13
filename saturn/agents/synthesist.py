@@ -308,7 +308,7 @@ def resynthesize_coherent(analysis, debate, dossier: CompanyDossier, llm, issues
                 return _build_thesis(json.loads(_extract_json(raw)), anchor, dossier)
             except Exception:  # noqa: BLE001 - malformed JSON; retry once then give up
                 continue
-        logger.warning("scenario re-synthesis unparseable for %s", getattr(dossier, "ticker", "?"))
+        logger.warning("scenario re-synthesis unparseable after retry for %s", getattr(dossier, "ticker", "?"))
         return None
     except Exception as exc:  # noqa: BLE001 - best-effort; never breaks the report
         logger.warning("scenario re-synthesis unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)

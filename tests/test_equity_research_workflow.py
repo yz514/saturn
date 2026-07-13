@@ -254,3 +254,18 @@ def test_run_coherence_gate_replaces_when_improved():
 def test_run_coherence_gate_keeps_original_when_not_improved():
     r = run(_coherence_dossier(), _CoherenceRunLLM(improve=False), model_used="m", mock=False)
     assert any(i.check == "monotonicity" for i in r.alpha_thesis.coherence_issues)
+
+
+class _CoherenceReSynthFailsLLM(_CoherenceRunLLM):
+    """The corrective re-synthesis returns unparseable JSON -> resynthesize_coherent soft-fails to
+    None -> the gate must keep the original (incoherent) thesis, never break the report."""
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        if "OUTPUT_SCHEMA=alpha" in prompt and "coherence checks" in prompt:
+            return "not valid json at all"
+        return super().complete(system, prompt, model=model, max_tokens=max_tokens)
+
+
+def test_run_coherence_gate_softfails_when_resynth_unparseable():
+    r = run(_coherence_dossier(), _CoherenceReSynthFailsLLM(), model_used="m", mock=False)
+    assert r.alpha_thesis is not None
+    assert any(i.check == "monotonicity" for i in r.alpha_thesis.coherence_issues)
