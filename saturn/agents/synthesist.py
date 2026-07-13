@@ -274,3 +274,8 @@ def synthesize(analysis, debate, dossier: CompanyDossier, llm, *, model: str | N
     except Exception as exc:  # noqa: BLE001 - synthesist is best-effort, never breaks the report
         logger.warning("synthesist unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)
         return None
+
+
+def _coherence_score(alpha: AlphaThesis) -> int:
+    """Severity-weighted coherence penalty (high=2, medium=1). Lower is better; 0 is coherent."""
+    return sum(2 if i.severity == "high" else 1 for i in alpha.coherence_issues)

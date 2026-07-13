@@ -1,10 +1,10 @@
 # tests/agents/test_synthesist.py
 from datetime import date
 
-from saturn.agents.synthesist import _resolve_anchor, _price_scenarios, alpha_completeness
+from saturn.agents.synthesist import _resolve_anchor, _price_scenarios, alpha_completeness, _coherence_score
 from saturn.models import (
     AlphaThesis, CompanyDossier, ConsensusSnapshot, DerivedMetric, ExpectationAnchor,
-    Provenance, Quote, ScenarioLeg,
+    Provenance, Quote, ScenarioLeg, CoherenceIssue,
 )
 
 
@@ -321,3 +321,17 @@ def test_coherence_flags_multiple_horizon():
 def test_coherence_multiple_horizon_skipped_without_consensus():
     legs = [_priced_leg("base", 136.8, -0.42, value=3.6, mult=38.0)]
     assert scenario_coherence(_coh_thesis(legs), _dossier()) == []
+
+
+def test_coherence_score_weights():
+    a = AlphaThesis(anchor=ExpectationAnchor(source="none", text="", confidence="low"),
+                    provenance=Provenance(source="Saturn (synthesist)"),
+                    coherence_issues=[CoherenceIssue(check="monotonicity", severity="high", detail="x"),
+                                      CoherenceIssue(check="prose_vs_computed", severity="medium", detail="y")])
+    assert _coherence_score(a) == 3
+
+
+def test_coherence_score_zero_when_clean():
+    a = AlphaThesis(anchor=ExpectationAnchor(source="none", text="", confidence="low"),
+                    provenance=Provenance(source="Saturn (synthesist)"))
+    assert _coherence_score(a) == 0
