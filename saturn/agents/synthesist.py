@@ -159,6 +159,7 @@ def apply_alpha_corrections(alpha: AlphaThesis, corrections: dict) -> AlphaThesi
     from saturn.models import ALPHA_PROSE_FIELDS
     updated = alpha.model_copy(update={k: v for k, v in corrections.items() if k in ALPHA_PROSE_FIELDS})
     updated.incompleteness = alpha_completeness(updated)
+    # coherence_issues are recomputed centrally at the end of run() (needs the dossier), not here.
     return updated
 
 

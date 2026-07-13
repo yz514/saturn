@@ -269,3 +269,52 @@ def test_run_coherence_gate_softfails_when_resynth_unparseable():
     r = run(_coherence_dossier(), _CoherenceReSynthFailsLLM(), model_used="m", mock=False)
     assert r.alpha_thesis is not None
     assert any(i.check == "monotonicity" for i in r.alpha_thesis.coherence_issues)
+
+
+class _StalePromptCoherenceLLM:
+    """prose_vs_computed survives the gate, then alpha-repair rewrites the rationale to remove the
+    contradiction. The final thesis must have NO stale coherence issue (run() recomputes)."""
+    def __init__(self):
+        self.critic_calls = 0
+    def _alpha(self, rationale):
+        legs = [{"name": "bull", "period": "FY2027", "driver": "d", "metric": "EPS", "metric_basis": "adjusted",
+                 "per_share_value": 10.0, "multiple": 22.0, "multiple_basis": "P/E"},
+                {"name": "base", "period": "FY2027", "driver": "d", "metric": "EPS", "metric_basis": "adjusted",
+                 "per_share_value": 10.0, "multiple": 15.0, "multiple_basis": "P/E"},
+                {"name": "bear", "period": "FY2027", "driver": "d", "metric": "EPS", "metric_basis": "adjusted",
+                 "per_share_value": 10.0, "multiple": 10.0, "multiple_basis": "P/E"}]
+        return json.dumps({"stance": "unclear", "variant": "v", "rationale": rationale, "confidence": "low",
+                           "key_variable": "k", "falsifier": "f", "horizon": "12m", "scenarios": legs})
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        if "OUTPUT_SCHEMA=analysis" in prompt:
+            return json.dumps({k: "orig" for k in _ANALYSIS_KEYS})
+        if "OUTPUT_SCHEMA=debate" in prompt:
+            return json.dumps({"bull_thesis": "b", "bear_thesis": "be", "final_view": "f"})
+        if "OUTPUT_SCHEMA=alpha" in prompt:
+            # initial AND corrective re-synth both claim +5% (issue survives the gate)
+            return self._alpha("Our base case implies +5% vs the Street's +3%.")
+        if "OUTPUT_SCHEMA=revise_alpha" in prompt:
+            return json.dumps({"rationale": "The base case reflects a cautious, execution-dependent view."})
+        if "OUTPUT_SCHEMA=critic" in prompt:
+            self.critic_calls += 1
+            finding = [{"claim": "base +5% contradicts the table", "section": "alpha_thesis",
+                        "category": "unsupported_alpha_inference", "verdict": "unsupported",
+                        "evidence": "computed base is -25%", "severity": "high"}]
+            if self.critic_calls == 1:
+                return json.dumps({"claims_checked": 1, "summary": "x", "findings": finding})
+            return json.dumps({"claims_checked": 1, "summary": "ok", "findings": []})
+        return "{}"
+
+
+def _stale_coherence_dossier():
+    d = _mock_dossier("MU")
+    d.consensus = None       # isolate prose_vs_computed (no multiple_horizon)
+    d.quote.price = 200.0    # base 10*15=150 -> computed base return -25%, vs prose +5% -> issue fires
+    return d
+
+
+def test_run_recomputes_coherence_after_alpha_repair():
+    r = run(_stale_coherence_dossier(), _StalePromptCoherenceLLM(), model_used="m", mock=False)
+    assert r.alpha_thesis is not None
+    assert "cautious" in r.alpha_thesis.rationale                 # alpha-repair rewrote the prose
+    assert r.alpha_thesis.coherence_issues == []                  # stale prose_vs_computed cleared

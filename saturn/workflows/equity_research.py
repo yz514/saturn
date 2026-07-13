@@ -15,7 +15,7 @@ from saturn.agents.critic import (
 )
 from saturn.agents.guidance import extract_guidance
 from saturn.agents.synthesist import (
-    _coherence_score, apply_alpha_corrections, resynthesize_coherent, synthesize,
+    _coherence_score, apply_alpha_corrections, resynthesize_coherent, scenario_coherence, synthesize,
 )
 from saturn.analytics.driver import compute_driver_model
 from saturn.llm.base import LLMClient
@@ -432,6 +432,13 @@ def run(
             if r_review is not None and _score(r_review) < _score(review):
                 r_review.repaired = True
                 alpha, review = r_alpha, r_review
+
+    # The alpha-repair loop above can rewrite the rationale (e.g. fixing a prose-vs-scenario
+    # contradiction the gate flagged). Recompute coherence on the FINAL thesis so the §2 banner
+    # reflects the shipped prose, never a stale warning. Scenarios are never repaired, so
+    # monotonicity/multiple_horizon are stable; only prose_vs_computed can change here.
+    if alpha is not None:
+        alpha.coherence_issues = scenario_coherence(alpha, company)
 
     return ResearchReport(
         ticker=company.ticker,
