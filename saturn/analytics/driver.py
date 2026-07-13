@@ -61,6 +61,8 @@ def compute_driver_model(fundamentals, quote, consensus, *, growth_override: flo
 
     consensus_eps = consensus.forward_eps if consensus is not None else None
     eps_gap = eps_gap_pct = implied_g = implied_m = None
+    consensus_revenue = consensus_growth = consensus_margin = None
+    gap_from_growth = gap_from_margin = None
     if consensus_eps:
         eps_gap = saturn_eps - consensus_eps
         eps_gap_pct = eps_gap / abs(consensus_eps)
@@ -70,6 +72,13 @@ def compute_driver_model(fundamentals, quote, consensus, *, growth_override: flo
         if implied_g is not None and abs(implied_g) > _EXTREME_GROWTH:
             caveats.append(f"consensus implies revenue growth of {implied_g:.0%} — extreme vs trend")
             low_conf = True
+        fr = consensus.forward_revenue if consensus is not None else None
+        if fr and rev_ttm > 0:
+            consensus_revenue = fr
+            consensus_growth = fr / rev_ttm - 1
+            consensus_margin = consensus_eps * shares / fr
+            gap_from_growth = rev_ttm * (consensus_growth - g) * margin / shares
+            gap_from_margin = rev_ttm * (1 + consensus_growth) * (consensus_margin - margin) / shares
 
     return DriverModel(
         horizon="NTM",
@@ -82,6 +91,11 @@ def compute_driver_model(fundamentals, quote, consensus, *, growth_override: flo
         eps_gap_pct=eps_gap_pct,
         consensus_implied_growth=implied_g,
         consensus_implied_margin=implied_m,
+        consensus_revenue=consensus_revenue,
+        consensus_growth=consensus_growth,
+        consensus_margin=consensus_margin,
+        gap_from_growth=gap_from_growth,
+        gap_from_margin=gap_from_margin,
         low_confidence=low_conf,
         caveats=caveats,
         growth_source=growth_source,

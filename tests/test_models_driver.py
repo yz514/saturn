@@ -27,3 +27,17 @@ def test_driver_model_growth_source_defaults_to_trend():
     dm = DriverModel(saturn_eps=2.0, trailing_revenue_growth=0.1, trailing_net_margin=0.1, shares=50.0,
                      provenance=Provenance(source="Saturn (model)"))
     assert dm.growth_source == "trend" and dm.growth_citation == ""
+
+
+def test_consensus_snapshot_has_forward_revenue():
+    from saturn.models import ConsensusSnapshot, Provenance
+    c = ConsensusSnapshot(provenance=Provenance(source="yfinance (estimate)"))
+    assert c.forward_revenue is None
+
+
+def test_driver_model_waterfall_fields_default_none():
+    from saturn.models import DriverModel, Provenance
+    dm = DriverModel(saturn_eps=2.0, trailing_revenue_growth=0.1, trailing_net_margin=0.1, shares=50.0,
+                     provenance=Provenance(source="Saturn (model)"))
+    assert dm.consensus_revenue is None and dm.consensus_growth is None and dm.consensus_margin is None
+    assert dm.gap_from_growth is None and dm.gap_from_margin is None

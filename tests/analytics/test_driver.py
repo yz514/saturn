@@ -95,3 +95,24 @@ def test_driver_growth_override_suppresses_no_history_caveat():
 def test_driver_without_override_is_trend():
     dm = compute_driver_model(_facts(_base_rows()), _quote(), None)
     assert dm.growth_source == "trend"
+
+
+def test_driver_waterfall_identity_and_values():
+    from saturn.models import ConsensusSnapshot, Provenance
+    cons = ConsensusSnapshot(forward_eps=2.5, forward_revenue=1100.0,
+                             provenance=Provenance(source="yfinance (estimate)"))
+    dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
+    # consensus growth = 1100/1000 - 1 = 0.10; consensus margin = 2.5*50/1100
+    assert abs(dm.consensus_growth - 0.10) < 1e-9
+    assert abs(dm.consensus_margin - (2.5 * 50 / 1100)) < 1e-9
+    # 2-factor identity: growth effect + margin effect == consensus_eps - saturn_eps
+    assert abs((dm.gap_from_growth + dm.gap_from_margin) - (2.5 - dm.saturn_eps)) < 1e-6
+    assert dm.consensus_revenue == 1100.0
+
+
+def test_driver_no_waterfall_without_forward_revenue():
+    from saturn.models import ConsensusSnapshot, Provenance
+    cons = ConsensusSnapshot(forward_eps=2.5, provenance=Provenance(source="yfinance (estimate)"))
+    dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
+    assert dm.consensus_revenue is None and dm.gap_from_growth is None and dm.gap_from_margin is None
+    assert dm.consensus_implied_growth is not None   # two-lens still present

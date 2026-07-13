@@ -139,3 +139,76 @@ def test_fetch_consensus_maps_info_fields(monkeypatch):
     raw = cons.fetch_consensus("AAPL")
     assert raw.forward_eps == 9.6 and raw.forward_pe == 30.6 and raw.peg == 2.4
     assert raw.target_mean == 314.0 and raw.rating == "buy" and raw.n_analysts == 42
+
+
+def test_fetch_consensus_reads_forward_revenue(monkeypatch):
+    import pandas as pd
+    from saturn.ingestion import consensus as C
+    df = pd.DataFrame({"avg": [70e9]}, index=["+1y"])
+
+    class _T:
+        info = {"forwardEps": 5.0}
+        earnings_history = None
+        revenue_estimate = df
+
+    monkeypatch.setattr(C, "yf", type("YF", (), {"Ticker": staticmethod(lambda t: _T())}))
+    raw = C.fetch_consensus("X")
+    assert raw.forward_revenue == 70e9
+
+
+def test_fetch_consensus_forward_revenue_defensive(monkeypatch):
+    from saturn.ingestion import consensus as C
+
+    class _T:
+        info = {}
+        earnings_history = None
+
+        @property
+        def revenue_estimate(self):
+            raise RuntimeError("analysis endpoint down")
+
+    monkeypatch.setattr(C, "yf", type("YF", (), {"Ticker": staticmethod(lambda t: _T())}))
+    assert C.fetch_consensus("X").forward_revenue is None
+
+
+def _rev_fund(eps=4.5, rev=90e9, shares=10e9):
+    return Fundamentals(facts=[
+        FinancialFact(concept="EarningsPerShareDiluted", value=eps, unit="USD/shares", fiscal_period="FY2024", provenance=PROV),
+        FinancialFact(concept="Revenues", value=rev, unit="USD", fiscal_period="FY2024", provenance=PROV),
+        FinancialFact(concept="WeightedAverageSharesDiluted", value=shares, unit="shares", fiscal_period="FY2024", provenance=PROV)])
+
+
+def test_forward_revenue_accepted_when_consistent():
+    # forward_eps 5.0 x 10e9 shares / 100e9 rev = 0.5 margin (ok); 100/90-1 = +11% growth (ok)
+    raw = RawConsensus(forward_eps=5.0, forward_revenue=100e9)
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0))
+    assert c.forward_eps == 5.0 and c.forward_revenue == 100e9
+    assert not any("forward_revenue" in r for r in c.rejected)
+
+
+def test_forward_revenue_rejected_when_implausible():
+    # fr 40e9 -> implied margin 50e9/40e9 = 1.25 (>0.6) -> rejected
+    raw = RawConsensus(forward_eps=5.0, forward_revenue=40e9)
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0))
+    assert c.forward_revenue is None
+    assert any("forward_revenue" in r for r in c.rejected)
+
+
+def test_forward_revenue_no_baseline_rejected():
+    # no Revenues/shares facts -> cannot validate
+    raw = RawConsensus(forward_eps=5.0, forward_revenue=100e9)
+    fund = Fundamentals(facts=[FinancialFact(
+        concept="EarningsPerShareDiluted", value=4.5, unit="USD/shares", fiscal_period="FY2024", provenance=PROV)])
+    c = validate_consensus(raw, fund, _quote(50.0))
+    assert c.forward_revenue is None
+    assert any("no baseline" in r for r in c.rejected)
+
+
+def test_forward_revenue_no_baseline_when_eps_rejected():
+    # forward_eps 100 vs trailing ~4.5 implies absurd growth -> EPS rejected -> snap.forward_eps None,
+    # so revenue can never be validated (no trustworthy EPS baseline).
+    raw = RawConsensus(forward_eps=100.0, forward_revenue=100e9)
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0))
+    assert c.forward_eps is None            # EPS rejected (out-of-band growth)
+    assert c.forward_revenue is None        # revenue not accepted without a validated EPS
+    assert any("no baseline" in r for r in c.rejected)
