@@ -40,6 +40,7 @@ class RawConsensus:
     last_actual_eps: float | None = None
     last_estimate_eps: float | None = None
     forward_revenue: float | None = None
+    forward_eps_ntm: float | None = None
 
 
 def _latest_fy_eps(fundamentals: Fundamentals | None) -> float | None:
@@ -128,23 +129,28 @@ def validate_consensus(
                 snap.forward_pe = raw.forward_pe if raw.forward_pe is not None else implied_pe
                 snap.peg = raw.peg
 
-    # --- forward revenue (consistency gate: implied margin & growth must be sane) ---
+    # --- forward revenue + current-FY EPS (consistency gate: implied margin & growth must be sane) ---
+    # The revenue ("0y" row) and EPS (forward_eps_ntm, "0y" row) are a horizon-matched pair — both
+    # ~1 year forward of TTM — so the gate validates them together and feeds them to the driver as a
+    # coherent NTM consensus. They are accepted or rejected as a unit.
     fr = raw.forward_revenue
+    ntm_eps = raw.forward_eps_ntm
     if fr is not None:
         idx = _index(fundamentals)
         annual = _annual_periods(idx)
         ttm = _ttm_or_fy(idx, "Revenues")
         shares_fact = _fact(idx, "WeightedAverageSharesDiluted", annual[0]) if annual else None
-        if snap.forward_eps and ttm and ttm[0] > 0 and shares_fact and shares_fact.value > 0 and fr > 0:
-            m_c = snap.forward_eps * shares_fact.value / fr
+        if ntm_eps and ntm_eps > 0 and ttm and ttm[0] > 0 and shares_fact and shares_fact.value > 0 and fr > 0:
+            m_c = ntm_eps * shares_fact.value / fr
             g_c = fr / ttm[0] - 1
             lo, hi = REVENUE_GROWTH_BAND
             if 0 < m_c < REVENUE_MARGIN_CAP and lo <= g_c <= hi:
                 snap.forward_revenue = fr
+                snap.forward_eps_ntm = ntm_eps
             else:
                 rejected.append(f"forward_revenue: rejected — implies margin {m_c:.0%} / growth {g_c:+.0%}")
         else:
-            rejected.append("forward_revenue: no baseline (shares/revenue/forward_eps) to validate")
+            rejected.append("forward_revenue: no baseline (shares/revenue/current-FY EPS) to validate")
 
     # --- price targets ---
     tm, th, tl, na = raw.target_mean, raw.target_high, raw.target_low, raw.n_analysts
@@ -217,13 +223,24 @@ def fetch_consensus(ticker: str) -> RawConsensus:
                 raw.last_estimate_eps = float(row["epsEstimate"].iloc[0])
     except Exception as exc:  # noqa: BLE001 - surprise is optional
         logger.debug("consensus earnings_history unavailable for %s: %s", ticker, exc)
-    # forward revenue estimate (best-effort; the analysis table is flaky across yfinance versions)
+    # Forward revenue + current-FY EPS estimates (best-effort; the analysis tables are flaky across
+    # yfinance versions). We read the "0y" (current fiscal year) rows so both figures sit ~1 year
+    # forward of TTM — matching the driver model's NTM bridge. (".info forwardEps" is the "+1y"/next-FY
+    # number; it stays as the forward-P/E anchor, a different horizon and a different purpose.)
     try:
         est = handle.revenue_estimate
-        if est is not None and "avg" in getattr(est, "columns", []) and "+1y" in getattr(est, "index", []):
-            v = est.loc["+1y", "avg"]
+        if est is not None and "avg" in getattr(est, "columns", []) and "0y" in getattr(est, "index", []):
+            v = est.loc["0y", "avg"]
             if v is not None and float(v) == float(v):   # reject NaN
                 raw.forward_revenue = float(v)
     except Exception as exc:  # noqa: BLE001 - revenue estimate is optional
         logger.debug("consensus revenue_estimate unavailable for %s: %s", ticker, exc)
+    try:
+        ee = handle.earnings_estimate
+        if ee is not None and "avg" in getattr(ee, "columns", []) and "0y" in getattr(ee, "index", []):
+            v = ee.loc["0y", "avg"]
+            if v is not None and float(v) == float(v):   # reject NaN
+                raw.forward_eps_ntm = float(v)
+    except Exception as exc:  # noqa: BLE001 - earnings estimate is optional
+        logger.debug("consensus earnings_estimate unavailable for %s: %s", ticker, exc)
     return raw

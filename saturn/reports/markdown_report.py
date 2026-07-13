@@ -158,6 +158,7 @@ def _render_alpha(thesis) -> list[str]:
     out.append(f"**Falsifier:** {thesis.falsifier or 'N/A'}")
     out.append(f"**Horizon:** {thesis.horizon or 'N/A'}")
     out.append("")
+    out += _render_coherence_banner(thesis)
     if thesis.scenarios:
         out.append("| Scenario | Period | Driver | Math | Price | Return |")
         out.append("| --- | --- | --- | --- | --- | --- |")
@@ -170,6 +171,19 @@ def _render_alpha(thesis) -> list[str]:
         out.append("")
     if thesis.incompleteness:
         out += [f"_Alpha thesis incomplete: {', '.join(thesis.incompleteness)}._", ""]
+    return out
+
+
+def _render_coherence_banner(thesis) -> list[str]:
+    """A prominent warning block for residual scenario-coherence issues, so a self-contradictory
+    scenario table is never presented as authoritative. Empty when the table is coherent."""
+    issues = getattr(thesis, "coherence_issues", None)
+    if not issues:
+        return []
+    out = ["> ⚠️ **Scenario coherence warning(s)** — treat the scenario returns as provisional:"]
+    for i in issues:
+        out.append(f">   • [{i.check}] {i.detail}")
+    out.append("")
     return out
 
 
@@ -200,7 +214,7 @@ def _render_driver_bridge(dm) -> list[str]:
     if dm.consensus_eps is not None:
         gap = f"${dm.eps_gap:+,.2f}" if dm.eps_gap is not None else "N/A"
         pct = f" ({dm.eps_gap_pct:+.0%})" if dm.eps_gap_pct is not None else ""
-        out.append(f"- **vs consensus EPS ${dm.consensus_eps:,.2f}:** gap {gap}{pct}")
+        out.append(f"- **vs consensus NTM EPS ${dm.consensus_eps:,.2f}:** gap {gap}{pct}")
         if dm.consensus_revenue is not None:
             out.append(
                 f"- **Gap attribution:** {dm.gap_from_growth:+.2f} EPS from growth "

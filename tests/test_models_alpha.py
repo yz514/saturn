@@ -36,3 +36,12 @@ def test_alpha_prose_fields_excludes_derived():
     # the prose fields are present
     for f in ("variant", "rationale", "key_variable", "falsifier", "horizon"):
         assert f in ALPHA_PROSE_FIELDS
+
+
+def test_coherence_issue_and_default_empty():
+    from saturn.models import CoherenceIssue, AlphaThesis, ExpectationAnchor, Provenance
+    issue = CoherenceIssue(check="monotonicity", severity="high", detail="bull below base")
+    assert issue.check == "monotonicity" and issue.severity == "high"
+    a = AlphaThesis(anchor=ExpectationAnchor(source="none", text="", confidence="low"),
+                    provenance=Provenance(source="Saturn (synthesist)"))
+    assert a.coherence_issues == []

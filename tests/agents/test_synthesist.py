@@ -1,10 +1,10 @@
 # tests/agents/test_synthesist.py
 from datetime import date
 
-from saturn.agents.synthesist import _resolve_anchor, _price_scenarios, alpha_completeness
+from saturn.agents.synthesist import _resolve_anchor, _price_scenarios, alpha_completeness, _coherence_score
 from saturn.models import (
     AlphaThesis, CompanyDossier, ConsensusSnapshot, DerivedMetric, ExpectationAnchor,
-    Provenance, Quote, ScenarioLeg,
+    Provenance, Quote, ScenarioLeg, CoherenceIssue,
 )
 
 
@@ -251,3 +251,87 @@ def test_apply_alpha_corrections_recomputes_incompleteness():
     # emptying the falsifier should make the completeness gate flag it
     updated = apply_alpha_corrections(_complete_thesis(), {"falsifier": ""})
     assert any("falsifier" in g for g in updated.incompleteness)
+
+
+from saturn.agents.synthesist import scenario_coherence
+
+
+def _priced_leg(name, price, ret, value=10.0, mult=15.0, basis="P/E"):
+    return ScenarioLeg(name=name, period="FY2027", driver="d", metric="EPS",
+                       metric_basis="adjusted", per_share_value=value, multiple=mult,
+                       multiple_basis=basis, implied_price=price, implied_return_pct=ret)
+
+
+def _coh_thesis(legs, rationale=""):
+    return AlphaThesis(
+        anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
+        stance="below_consensus", rationale=rationale, confidence="low",
+        scenarios=legs, provenance=Provenance(source="Saturn (synthesist)"))
+
+
+def test_coherence_flags_non_monotonic_prices():
+    # bull priced BELOW bear -> high monotonicity issue
+    legs = [_priced_leg("bull", 100.0, -0.1), _priced_leg("base", 150.0, 0.0),
+            _priced_leg("bear", 200.0, 0.2)]
+    issues = scenario_coherence(_coh_thesis(legs), _dossier())
+    assert [i.check for i in issues] == ["monotonicity"]
+    assert issues[0].severity == "high"
+
+
+def test_coherence_clean_monotonic_table_has_no_issue():
+    legs = [_priced_leg("bull", 200.0, 0.2), _priced_leg("base", 150.0, 0.0),
+            _priced_leg("bear", 100.0, -0.2)]
+    assert scenario_coherence(_coh_thesis(legs), _dossier()) == []
+
+
+def test_coherence_flags_prose_vs_computed():
+    legs = [_priced_leg("bull", 200.0, 0.2), _priced_leg("base", 150.0, -0.42),
+            _priced_leg("bear", 100.0, -0.6)]
+    t = _coh_thesis(legs, rationale="Our base case implies ~+2% vs the Street's +7%.")
+    issues = scenario_coherence(t, _dossier())
+    assert [i.check for i in issues] == ["prose_vs_computed"]
+    assert issues[0].severity == "medium"
+
+
+def test_coherence_prose_matching_computed_is_clean():
+    legs = [_priced_leg("bull", 200.0, 0.2), _priced_leg("base", 150.0, -0.42),
+            _priced_leg("bear", 100.0, -0.6)]
+    t = _coh_thesis(legs, rationale="Our base case implies -40% vs the Street's +7%.")
+    assert scenario_coherence(t, _dossier()) == []
+
+
+def test_coherence_unparseable_prose_no_false_positive():
+    legs = [_priced_leg("bull", 200.0, 0.2), _priced_leg("base", 150.0, -0.42),
+            _priced_leg("bear", 100.0, -0.6)]
+    t = _coh_thesis(legs, rationale="The base case is cautious given execution risk.")
+    assert scenario_coherence(t, _dossier()) == []
+
+
+def test_coherence_flags_multiple_horizon():
+    # consensus forward P/E 38x on forward EPS 6.0; a P/E leg at 38x applied to EPS 3.6 (< 0.8*6.0)
+    cons = ConsensusSnapshot(forward_pe=38.0, forward_eps=6.0,
+                             provenance=Provenance(source="yfinance (estimate)"))
+    legs = [_priced_leg("bull", 200.0, 0.2, value=4.8, mult=42.0),
+            _priced_leg("base", 136.8, -0.42, value=3.6, mult=38.0),
+            _priced_leg("bear", 81.2, -0.66, value=2.9, mult=28.0)]
+    issues = scenario_coherence(_coh_thesis(legs), _dossier(consensus=cons))
+    assert [i.check for i in issues] == ["multiple_horizon"]
+
+
+def test_coherence_multiple_horizon_skipped_without_consensus():
+    legs = [_priced_leg("base", 136.8, -0.42, value=3.6, mult=38.0)]
+    assert scenario_coherence(_coh_thesis(legs), _dossier()) == []
+
+
+def test_coherence_score_weights():
+    a = AlphaThesis(anchor=ExpectationAnchor(source="none", text="", confidence="low"),
+                    provenance=Provenance(source="Saturn (synthesist)"),
+                    coherence_issues=[CoherenceIssue(check="monotonicity", severity="high", detail="x"),
+                                      CoherenceIssue(check="prose_vs_computed", severity="medium", detail="y")])
+    assert _coherence_score(a) == 3
+
+
+def test_coherence_score_zero_when_clean():
+    a = AlphaThesis(anchor=ExpectationAnchor(source="none", text="", confidence="low"),
+                    provenance=Provenance(source="Saturn (synthesist)"))
+    assert _coherence_score(a) == 0

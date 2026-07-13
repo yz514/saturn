@@ -66,6 +66,7 @@ class ConsensusSnapshot(BaseModel):
     class: external estimate data, not as-reported and not a Saturn model output."""
 
     forward_eps: float | None = None
+    forward_eps_ntm: float | None = None  # current-FY (0y) EPS estimate — horizon-matched to forward_revenue
     forward_revenue: float | None = None
     forward_pe: float | None = None
     peg: float | None = None
@@ -163,6 +164,13 @@ class ScenarioLeg(BaseModel):
     implied_return_pct: float | None = None
 
 
+class CoherenceIssue(BaseModel):
+    """A deterministic scenario-table coherence problem (computed, never LLM-authored)."""
+    check: Literal["monotonicity", "prose_vs_computed", "multiple_horizon"]
+    severity: Literal["high", "medium"]
+    detail: str
+
+
 class AlphaThesis(BaseModel):
     """A tradeable variant view: anchor, stance, falsifier, and priced scenarios.
     LLM-supplied fields default so a partial LLM response still validates; the
@@ -178,6 +186,7 @@ class AlphaThesis(BaseModel):
     horizon: str = ""
     scenarios: list[ScenarioLeg] = Field(default_factory=list)
     incompleteness: list[str] = Field(default_factory=list)
+    coherence_issues: list[CoherenceIssue] = Field(default_factory=list)
     provenance: Provenance
 
 

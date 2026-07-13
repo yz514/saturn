@@ -3,12 +3,17 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from saturn.models import AlphaThesis, CompanyDossier, ExpectationAnchor, Provenance, ScenarioLeg
 
 logger = logging.getLogger(__name__)
 _MAX_OUTPUT_TOKENS = 8192
 _STANCE_BAND = 0.10  # ±10 percentage points around the consensus target defines "in line"
+_COHERENCE_MULTIPLE_TOL = 0.15   # a leg multiple within ±15% of consensus forward P/E is "the forward multiple"
+_COHERENCE_EPS_FLOOR = 0.8       # ... applied to an EPS below 80% of consensus forward EPS is horizon-mismatched
+_PROSE_RETURN_TOL = 0.15         # prose base return may differ from the computed base return by ≤15pp
+_PROSE_RETURN_RE = re.compile(r"base case implies[^%]*?([+-]?\d+(?:\.\d+)?)\s*%", re.IGNORECASE)
 
 
 def _derive_stance(base_return: float | None, target_upside: float | None) -> str | None:
@@ -102,6 +107,51 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
     return gaps
 
 
+def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["CoherenceIssue"]:
+    """Deterministic coherence audit of the priced scenario table (sibling to alpha_completeness).
+    Returns issues in a stable order: monotonicity, prose_vs_computed, multiple_horizon. Pure; any
+    missing data skips that check rather than raising."""
+    from saturn.models import CoherenceIssue
+    issues: list[CoherenceIssue] = []
+    legs = {s.name: s for s in thesis.scenarios}
+    bull, base, bear = legs.get("bull"), legs.get("base"), legs.get("bear")
+
+    # 1. Monotonicity — bull >= base >= bear in implied price.
+    if bull and base and bear and all(x.implied_price is not None for x in (bull, base, bear)):
+        if not (bull.implied_price >= base.implied_price >= bear.implied_price):
+            issues.append(CoherenceIssue(
+                check="monotonicity", severity="high",
+                detail=(f"prices not monotonic: bull ${bull.implied_price:,.2f} / "
+                        f"base ${base.implied_price:,.2f} / bear ${bear.implied_price:,.2f}")))
+
+    # 2. Prose-vs-computed — the narrated base return must match the computed base return.
+    if base is not None and base.implied_return_pct is not None:
+        text = thesis.rationale or thesis.variant or ""
+        m = _PROSE_RETURN_RE.search(text)
+        if m:
+            parsed = float(m.group(1)) / 100.0
+            if abs(parsed - base.implied_return_pct) > _PROSE_RETURN_TOL:
+                issues.append(CoherenceIssue(
+                    check="prose_vs_computed", severity="medium",
+                    detail=(f"rationale says base {parsed:+.0%} but the table computes "
+                            f"{base.implied_return_pct:+.0%}")))
+
+    # 3. Multiple-horizon — a forward (FY+1) P/E applied to a materially lower near-term EPS.
+    cons = dossier.consensus
+    if cons is not None and cons.forward_pe is not None and cons.forward_eps is not None:
+        for s in thesis.scenarios:
+            if (s.multiple_basis == "P/E"
+                    and abs(s.multiple - cons.forward_pe) <= _COHERENCE_MULTIPLE_TOL * cons.forward_pe
+                    and s.per_share_value < _COHERENCE_EPS_FLOOR * cons.forward_eps):
+                issues.append(CoherenceIssue(
+                    check="multiple_horizon", severity="medium",
+                    detail=(f"{s.name} applies forward P/E {s.multiple:g}x to EPS "
+                            f"${s.per_share_value:g} (< {_COHERENCE_EPS_FLOOR:g}× consensus forward "
+                            f"EPS ${cons.forward_eps:g})")))
+                break   # one horizon issue per table is enough
+    return issues
+
+
 def apply_alpha_corrections(alpha: AlphaThesis, corrections: dict) -> AlphaThesis:
     """Splice corrected prose fields into the alpha thesis and recompute completeness. Only
     ALPHA_PROSE_FIELDS are updated; stance/stance_basis/anchor/scenarios are carried over verbatim
@@ -109,6 +159,7 @@ def apply_alpha_corrections(alpha: AlphaThesis, corrections: dict) -> AlphaThesi
     from saturn.models import ALPHA_PROSE_FIELDS
     updated = alpha.model_copy(update={k: v for k, v in corrections.items() if k in ALPHA_PROSE_FIELDS})
     updated.incompleteness = alpha_completeness(updated)
+    # coherence_issues are recomputed centrally at the end of run() (needs the dossier), not here.
     return updated
 
 
@@ -200,6 +251,7 @@ def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier
         provenance=Provenance(source="Saturn (synthesist)"),
     )
     thesis.incompleteness = alpha_completeness(thesis)
+    thesis.coherence_issues = scenario_coherence(thesis, dossier)
     return thesis
 
 
@@ -222,4 +274,43 @@ def synthesize(analysis, debate, dossier: CompanyDossier, llm, *, model: str | N
         return None
     except Exception as exc:  # noqa: BLE001 - synthesist is best-effort, never breaks the report
         logger.warning("synthesist unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)
+        return None
+
+
+def _coherence_score(alpha: AlphaThesis) -> int:
+    """Severity-weighted coherence penalty (high=2, medium=1). Lower is better; 0 is coherent."""
+    return sum(2 if i.severity == "high" else 1 for i in alpha.coherence_issues)
+
+
+def resynthesize_coherent(analysis, debate, dossier: CompanyDossier, llm, issues,
+                          *, model: str | None = None) -> AlphaThesis | None:
+    """One corrective synthesize pass: re-ask for a fully self-consistent thesis given the specific
+    coherence problems. Reuses the synthesize machinery so prose AND scenarios regenerate together.
+    Soft-fails to None; never breaks the report."""
+    from saturn.workflows.equity_research import _company_context, _extract_json
+    try:
+        anchor = _resolve_anchor(dossier)
+        base_prompt = _synthesize_prompt(analysis, debate, anchor, _company_context(dossier))
+        problems = "; ".join(f"[{i.check}] {i.detail}" for i in issues)
+        corrective = (
+            "\n\nYour previous scenario table failed these coherence checks: " + problems + ". "
+            "Regenerate the FULL thesis so that: bull >= base >= bear in implied price; any P/E "
+            "multiple matches the horizon of its EPS (do NOT apply a next-fiscal-year multiple to a "
+            "near-term EPS); and the base-case return you describe in the rationale matches the base "
+            "scenario you output. Do NOT output prices."
+        )
+        strict = ("\n\nIMPORTANT: your previous reply was not valid JSON. Return ONLY a single, "
+                  "strictly valid JSON object.")
+        for attempt in range(2):
+            raw = llm.complete(SYNTHESIZE_SYSTEM,
+                               base_prompt + corrective + ("" if attempt == 0 else strict),
+                               model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+            try:
+                return _build_thesis(json.loads(_extract_json(raw)), anchor, dossier)
+            except Exception:  # noqa: BLE001 - malformed JSON; retry once then give up
+                continue
+        logger.warning("scenario re-synthesis unparseable after retry for %s", getattr(dossier, "ticker", "?"))
+        return None
+    except Exception as exc:  # noqa: BLE001 - best-effort; never breaks the report
+        logger.warning("scenario re-synthesis unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)
         return None
