@@ -200,7 +200,7 @@ def _render_driver_bridge(dm) -> list[str]:
     if dm.consensus_eps is not None:
         gap = f"${dm.eps_gap:+,.2f}" if dm.eps_gap is not None else "N/A"
         pct = f" ({dm.eps_gap_pct:+.0%})" if dm.eps_gap_pct is not None else ""
-        out.append(f"- **vs consensus EPS ${dm.consensus_eps:,.2f}:** gap {gap}{pct}")
+        out.append(f"- **vs consensus NTM EPS ${dm.consensus_eps:,.2f}:** gap {gap}{pct}")
         if dm.consensus_revenue is not None:
             out.append(
                 f"- **Gap attribution:** {dm.gap_from_growth:+.2f} EPS from growth "

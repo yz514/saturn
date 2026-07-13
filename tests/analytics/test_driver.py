@@ -110,6 +110,18 @@ def test_driver_waterfall_identity_and_values():
     assert dm.consensus_revenue == 1100.0
 
 
+def test_driver_prefers_ntm_eps_over_forward_eps():
+    # When the horizon-matched current-FY (NTM) EPS is present, the gap/waterfall use it, not the
+    # forward (FY+1) anchor EPS — so the comparison is like-for-like with Saturn's 1yr bridge.
+    from saturn.models import ConsensusSnapshot, Provenance
+    cons = ConsensusSnapshot(forward_eps=4.0, forward_eps_ntm=2.5, forward_revenue=1100.0,
+                             provenance=Provenance(source="yfinance (estimate)"))
+    dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
+    assert dm.consensus_eps == 2.5                                    # NTM, not the 4.0 anchor
+    assert abs(dm.consensus_margin - (2.5 * 50 / 1100)) < 1e-9        # margin uses NTM EPS
+    assert abs((dm.gap_from_growth + dm.gap_from_margin) - (2.5 - dm.saturn_eps)) < 1e-6
+
+
 def test_driver_no_waterfall_without_forward_revenue():
     from saturn.models import ConsensusSnapshot, Provenance
     cons = ConsensusSnapshot(forward_eps=2.5, provenance=Provenance(source="yfinance (estimate)"))

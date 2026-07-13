@@ -66,6 +66,7 @@ class ConsensusSnapshot(BaseModel):
     class: external estimate data, not as-reported and not a Saturn model output."""
 
     forward_eps: float | None = None
+    forward_eps_ntm: float | None = None  # current-FY (0y) EPS estimate — horizon-matched to forward_revenue
     forward_revenue: float | None = None
     forward_pe: float | None = None
     peg: float | None = None
