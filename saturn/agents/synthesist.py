@@ -3,12 +3,17 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from saturn.models import AlphaThesis, CompanyDossier, ExpectationAnchor, Provenance, ScenarioLeg
 
 logger = logging.getLogger(__name__)
 _MAX_OUTPUT_TOKENS = 8192
 _STANCE_BAND = 0.10  # ±10 percentage points around the consensus target defines "in line"
+_COHERENCE_MULTIPLE_TOL = 0.15   # a leg multiple within ±15% of consensus forward P/E is "the forward multiple"
+_COHERENCE_EPS_FLOOR = 0.8       # ... applied to an EPS below 80% of consensus forward EPS is horizon-mismatched
+_PROSE_RETURN_TOL = 0.15         # prose base return may differ from the computed base return by ≤15pp
+_PROSE_RETURN_RE = re.compile(r"base case implies[^%]*?([+-]?\d+(?:\.\d+)?)\s*%", re.IGNORECASE)
 
 
 def _derive_stance(base_return: float | None, target_upside: float | None) -> str | None:
@@ -100,6 +105,51 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
         if not s.period.strip():
             gaps.append(f"scenario '{s.name}' missing period")
     return gaps
+
+
+def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["CoherenceIssue"]:
+    """Deterministic coherence audit of the priced scenario table (sibling to alpha_completeness).
+    Returns issues in a stable order: monotonicity, prose_vs_computed, multiple_horizon. Pure; any
+    missing data skips that check rather than raising."""
+    from saturn.models import CoherenceIssue
+    issues: list[CoherenceIssue] = []
+    legs = {s.name: s for s in thesis.scenarios}
+    bull, base, bear = legs.get("bull"), legs.get("base"), legs.get("bear")
+
+    # 1. Monotonicity — bull >= base >= bear in implied price.
+    if bull and base and bear and all(x.implied_price is not None for x in (bull, base, bear)):
+        if not (bull.implied_price >= base.implied_price >= bear.implied_price):
+            issues.append(CoherenceIssue(
+                check="monotonicity", severity="high",
+                detail=(f"prices not monotonic: bull ${bull.implied_price:,.2f} / "
+                        f"base ${base.implied_price:,.2f} / bear ${bear.implied_price:,.2f}")))
+
+    # 2. Prose-vs-computed — the narrated base return must match the computed base return.
+    if base is not None and base.implied_return_pct is not None:
+        text = thesis.rationale or thesis.variant or ""
+        m = _PROSE_RETURN_RE.search(text)
+        if m:
+            parsed = float(m.group(1)) / 100.0
+            if abs(parsed - base.implied_return_pct) > _PROSE_RETURN_TOL:
+                issues.append(CoherenceIssue(
+                    check="prose_vs_computed", severity="medium",
+                    detail=(f"rationale says base {parsed:+.0%} but the table computes "
+                            f"{base.implied_return_pct:+.0%}")))
+
+    # 3. Multiple-horizon — a forward (FY+1) P/E applied to a materially lower near-term EPS.
+    cons = dossier.consensus
+    if cons is not None and cons.forward_pe is not None and cons.forward_eps is not None:
+        for s in thesis.scenarios:
+            if (s.multiple_basis == "P/E"
+                    and abs(s.multiple - cons.forward_pe) <= _COHERENCE_MULTIPLE_TOL * cons.forward_pe
+                    and s.per_share_value < _COHERENCE_EPS_FLOOR * cons.forward_eps):
+                issues.append(CoherenceIssue(
+                    check="multiple_horizon", severity="medium",
+                    detail=(f"{s.name} applies forward P/E {s.multiple:g}x to EPS "
+                            f"${s.per_share_value:g} (< {_COHERENCE_EPS_FLOOR:g}× consensus forward "
+                            f"EPS ${cons.forward_eps:g})")))
+                break   # one horizon issue per table is enough
+    return issues
 
 
 def apply_alpha_corrections(alpha: AlphaThesis, corrections: dict) -> AlphaThesis:
@@ -200,6 +250,7 @@ def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier
         provenance=Provenance(source="Saturn (synthesist)"),
     )
     thesis.incompleteness = alpha_completeness(thesis)
+    thesis.coherence_issues = scenario_coherence(thesis, dossier)
     return thesis
 
 
