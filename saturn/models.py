@@ -164,6 +164,13 @@ class ScenarioLeg(BaseModel):
     implied_return_pct: float | None = None
 
 
+class CoherenceIssue(BaseModel):
+    """A deterministic scenario-table coherence problem (computed, never LLM-authored)."""
+    check: Literal["monotonicity", "prose_vs_computed", "multiple_horizon"]
+    severity: Literal["high", "medium"]
+    detail: str
+
+
 class AlphaThesis(BaseModel):
     """A tradeable variant view: anchor, stance, falsifier, and priced scenarios.
     LLM-supplied fields default so a partial LLM response still validates; the
@@ -179,6 +186,7 @@ class AlphaThesis(BaseModel):
     horizon: str = ""
     scenarios: list[ScenarioLeg] = Field(default_factory=list)
     incompleteness: list[str] = Field(default_factory=list)
+    coherence_issues: list[CoherenceIssue] = Field(default_factory=list)
     provenance: Provenance
 
 
