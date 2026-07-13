@@ -59,7 +59,12 @@ def compute_driver_model(fundamentals, quote, consensus, *, growth_override: flo
 
     saturn_eps = rev_ttm * (1 + g) * margin / shares
 
-    consensus_eps = consensus.forward_eps if consensus is not None else None
+    # Prefer the horizon-matched current-FY (NTM) consensus EPS so the gap and waterfall compare
+    # like-for-like against Saturn's 1-year-forward bridge. Fall back to the forward (FY+1) EPS when
+    # the NTM estimate is unavailable (preserves behavior for names without an earnings-estimate table).
+    consensus_eps = None
+    if consensus is not None:
+        consensus_eps = consensus.forward_eps_ntm or consensus.forward_eps
     eps_gap = eps_gap_pct = implied_g = implied_m = None
     consensus_revenue = consensus_growth = consensus_margin = None
     gap_from_growth = gap_from_margin = None
