@@ -158,6 +158,7 @@ def _render_alpha(thesis) -> list[str]:
     out.append(f"**Falsifier:** {thesis.falsifier or 'N/A'}")
     out.append(f"**Horizon:** {thesis.horizon or 'N/A'}")
     out.append("")
+    out += _render_coherence_banner(thesis)
     if thesis.scenarios:
         out.append("| Scenario | Period | Driver | Math | Price | Return |")
         out.append("| --- | --- | --- | --- | --- | --- |")
@@ -170,6 +171,19 @@ def _render_alpha(thesis) -> list[str]:
         out.append("")
     if thesis.incompleteness:
         out += [f"_Alpha thesis incomplete: {', '.join(thesis.incompleteness)}._", ""]
+    return out
+
+
+def _render_coherence_banner(thesis) -> list[str]:
+    """A prominent warning block for residual scenario-coherence issues, so a self-contradictory
+    scenario table is never presented as authoritative. Empty when the table is coherent."""
+    issues = getattr(thesis, "coherence_issues", None)
+    if not issues:
+        return []
+    out = ["> ⚠️ **Scenario coherence warning(s)** — treat the scenario returns as provisional:"]
+    for i in issues:
+        out.append(f">   • [{i.check}] {i.detail}")
+    out.append("")
     return out
 
 

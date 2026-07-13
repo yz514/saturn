@@ -510,3 +510,24 @@ def test_render_driver_bridge_two_lens_when_no_waterfall():
     md = render(report)
     assert "Consensus implies" in md
     assert "Gap attribution" not in md
+
+
+def test_render_coherence_banner_present_and_absent():
+    from saturn.reports.markdown_report import _render_alpha
+    from saturn.models import (AlphaThesis, CoherenceIssue, ExpectationAnchor, Provenance, ScenarioLeg)
+    def _leg(n, p): return ScenarioLeg(name=n, period="FY2027", driver="d", metric="EPS",
+        metric_basis="adjusted", per_share_value=10.0, multiple=15.0, multiple_basis="P/E", implied_price=p)
+    base = dict(anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
+                stance="below_consensus", variant="v", rationale="r", confidence="low",
+                key_variable="k", falsifier="f", horizon="12m",
+                scenarios=[_leg("bull", 100.0), _leg("base", 150.0), _leg("bear", 200.0)],
+                provenance=Provenance(source="Saturn (synthesist)"))
+    with_issue = AlphaThesis(coherence_issues=[CoherenceIssue(
+        check="monotonicity", severity="high", detail="prices not monotonic")], **base)
+    md = "\n".join(_render_alpha(with_issue))
+    assert "Scenario coherence warning" in md and "prices not monotonic" in md
+    # banner appears before the scenario table
+    assert md.index("Scenario coherence warning") < md.index("| Scenario |")
+
+    clean = AlphaThesis(**base)
+    assert "Scenario coherence warning" not in "\n".join(_render_alpha(clean))
