@@ -279,3 +279,37 @@ def synthesize(analysis, debate, dossier: CompanyDossier, llm, *, model: str | N
 def _coherence_score(alpha: AlphaThesis) -> int:
     """Severity-weighted coherence penalty (high=2, medium=1). Lower is better; 0 is coherent."""
     return sum(2 if i.severity == "high" else 1 for i in alpha.coherence_issues)
+
+
+def resynthesize_coherent(analysis, debate, dossier: CompanyDossier, llm, issues,
+                          *, model: str | None = None) -> AlphaThesis | None:
+    """One corrective synthesize pass: re-ask for a fully self-consistent thesis given the specific
+    coherence problems. Reuses the synthesize machinery so prose AND scenarios regenerate together.
+    Soft-fails to None; never breaks the report."""
+    from saturn.workflows.equity_research import _company_context, _extract_json
+    try:
+        anchor = _resolve_anchor(dossier)
+        base_prompt = _synthesize_prompt(analysis, debate, anchor, _company_context(dossier))
+        problems = "; ".join(f"[{i.check}] {i.detail}" for i in issues)
+        corrective = (
+            "\n\nYour previous scenario table failed these coherence checks: " + problems + ". "
+            "Regenerate the FULL thesis so that: bull >= base >= bear in implied price; any P/E "
+            "multiple matches the horizon of its EPS (do NOT apply a next-fiscal-year multiple to a "
+            "near-term EPS); and the base-case return you describe in the rationale matches the base "
+            "scenario you output. Do NOT output prices."
+        )
+        strict = ("\n\nIMPORTANT: your previous reply was not valid JSON. Return ONLY a single, "
+                  "strictly valid JSON object.")
+        for attempt in range(2):
+            raw = llm.complete(SYNTHESIZE_SYSTEM,
+                               base_prompt + corrective + ("" if attempt == 0 else strict),
+                               model=model, max_tokens=_MAX_OUTPUT_TOKENS)
+            try:
+                return _build_thesis(json.loads(_extract_json(raw)), anchor, dossier)
+            except Exception:  # noqa: BLE001 - malformed JSON; retry once then give up
+                continue
+        logger.warning("scenario re-synthesis unparseable for %s", getattr(dossier, "ticker", "?"))
+        return None
+    except Exception as exc:  # noqa: BLE001 - best-effort; never breaks the report
+        logger.warning("scenario re-synthesis unavailable for %s: %s", getattr(dossier, "ticker", "?"), exc)
+        return None

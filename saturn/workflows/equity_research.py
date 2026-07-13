@@ -14,7 +14,9 @@ from saturn.agents.critic import (
     _actionable, _alpha_actionable, _is_alpha_actionable, _score, critique, revise, revise_alpha,
 )
 from saturn.agents.guidance import extract_guidance
-from saturn.agents.synthesist import apply_alpha_corrections, synthesize
+from saturn.agents.synthesist import (
+    _coherence_score, apply_alpha_corrections, resynthesize_coherent, synthesize,
+)
 from saturn.analytics.driver import compute_driver_model
 from saturn.llm.base import LLMClient
 from saturn.models import (
@@ -389,6 +391,14 @@ def run(
     analysis = analyze(company, llm, model=call_model)
     deb = debate(company, llm, model=call_model)
     alpha = synthesize(analysis, deb, company, llm, model=call_model)
+    # Scenario-coherence gate: if the priced scenario table is internally incoherent (non-monotonic
+    # prices, a rationale base return that contradicts the table, or a forward multiple applied to a
+    # near-term EPS), do ONE corrective re-synthesis and keep it only if strictly more coherent.
+    # Soft-fail keeps the original. Runs before critique so the Critic audits the coherent thesis.
+    if alpha is not None and alpha.coherence_issues:
+        r_alpha = resynthesize_coherent(analysis, deb, company, llm, alpha.coherence_issues, model=call_model)
+        if r_alpha is not None and _coherence_score(r_alpha) < _coherence_score(alpha):
+            alpha = r_alpha
     review = critique(analysis, deb, company, llm, model=call_model, alpha=alpha)
 
     # Self-repair loop: when the Critic finds actionable errors, revise the affected

@@ -198,3 +198,59 @@ def test_run_quarter_guidance_adds_annualization_caveat():
     dm = r.company.driver_model
     assert dm is not None and dm.growth_source == "guidance"
     assert any("annualized from a quarterly" in c for c in dm.caveats)
+
+
+def _incoherent_scenarios():
+    # non-monotonic: bull price 100 < bear price 200
+    return [{"name": "bull", "period": "FY2027", "driver": "d", "metric": "EPS", "metric_basis": "adjusted",
+             "per_share_value": 10.0, "multiple": 10.0, "multiple_basis": "P/E"},
+            {"name": "base", "period": "FY2027", "driver": "d", "metric": "EPS", "metric_basis": "adjusted",
+             "per_share_value": 10.0, "multiple": 15.0, "multiple_basis": "P/E"},
+            {"name": "bear", "period": "FY2027", "driver": "d", "metric": "EPS", "metric_basis": "adjusted",
+             "per_share_value": 10.0, "multiple": 20.0, "multiple_basis": "P/E"}]
+
+
+def _coherent_scenarios():
+    return [{"name": "bull", "period": "FY2027", "driver": "d", "metric": "EPS", "metric_basis": "adjusted",
+             "per_share_value": 10.0, "multiple": 20.0, "multiple_basis": "P/E"},
+            {"name": "base", "period": "FY2027", "driver": "d", "metric": "EPS", "metric_basis": "adjusted",
+             "per_share_value": 10.0, "multiple": 15.0, "multiple_basis": "P/E"},
+            {"name": "bear", "period": "FY2027", "driver": "d", "metric": "EPS", "metric_basis": "adjusted",
+             "per_share_value": 10.0, "multiple": 10.0, "multiple_basis": "P/E"}]
+
+
+class _CoherenceRunLLM:
+    """synth (incoherent) -> coherence gate -> re-synth (coherent iff improve) -> clean critic."""
+    def __init__(self, improve=True):
+        self.improve = improve
+    def _alpha(self, scenarios):
+        return json.dumps({"stance": "unclear", "variant": "v", "rationale": "r", "confidence": "low",
+                           "key_variable": "k", "falsifier": "f", "horizon": "12m", "scenarios": scenarios})
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        if "OUTPUT_SCHEMA=analysis" in prompt:
+            return json.dumps({k: "orig" for k in _ANALYSIS_KEYS})
+        if "OUTPUT_SCHEMA=debate" in prompt:
+            return json.dumps({"bull_thesis": "b", "bear_thesis": "be", "final_view": "f"})
+        if "OUTPUT_SCHEMA=alpha" in prompt:
+            if "coherence checks" in prompt:   # the corrective re-synthesis
+                return self._alpha(_coherent_scenarios() if self.improve else _incoherent_scenarios())
+            return self._alpha(_incoherent_scenarios())
+        if "OUTPUT_SCHEMA=critic" in prompt:
+            return json.dumps({"claims_checked": 1, "summary": "ok", "findings": []})
+        return "{}"
+
+
+def _coherence_dossier():
+    d = _mock_dossier("MU")
+    d.consensus = None   # isolate the monotonicity check (no consensus -> multiple_horizon skipped)
+    return d
+
+
+def test_run_coherence_gate_replaces_when_improved():
+    r = run(_coherence_dossier(), _CoherenceRunLLM(improve=True), model_used="m", mock=False)
+    assert r.alpha_thesis is not None and r.alpha_thesis.coherence_issues == []
+
+
+def test_run_coherence_gate_keeps_original_when_not_improved():
+    r = run(_coherence_dossier(), _CoherenceRunLLM(improve=False), model_used="m", mock=False)
+    assert any(i.check == "monotonicity" for i in r.alpha_thesis.coherence_issues)
