@@ -242,7 +242,8 @@ class _CoherenceRunLLM:
 
 def _coherence_dossier():
     d = _mock_dossier("MU")
-    d.consensus = None   # isolate the monotonicity check (no consensus -> multiple_horizon skipped)
+    d.consensus = None       # isolate coherence checks (no consensus → multiple_horizon skipped)
+    d.quote.price = 150.0    # coherent bull (10x20=200) is above spot; incoherent bull (10x10=100) below
     return d
 
 
