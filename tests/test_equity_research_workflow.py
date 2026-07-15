@@ -318,3 +318,87 @@ def test_run_recomputes_coherence_after_alpha_repair():
     assert r.alpha_thesis is not None
     assert "cautious" in r.alpha_thesis.rationale                 # alpha-repair rewrote the prose
     assert r.alpha_thesis.coherence_issues == []                  # stale prose_vs_computed cleared
+
+
+def _mp_legs(bull, base, bear):
+    # each arg is (per_share_value, multiple); price = value*multiple, return computed vs quote
+    def leg(name, vm):
+        return {"name": name, "period": "FY2027", "driver": "d", "metric": "EPS",
+                "metric_basis": "adjusted", "per_share_value": vm[0], "multiple": vm[1],
+                "multiple_basis": "P/E"}
+    return [leg("bull", bull), leg("base", base), leg("bear", bear)]
+
+
+class _MultiPassLLM:
+    """Returns `initial` on the first synthesize; on each corrective re-synthesis (prompt contains
+    'coherence checks') returns the next table from `resynth_tables` (clamped to the last)."""
+    def __init__(self, stance, initial, resynth_tables):
+        self.stance = stance
+        self.initial = initial
+        self.resynth_tables = resynth_tables
+        self.resynth = 0
+    def _alpha(self, legs):
+        return json.dumps({"stance": self.stance, "variant": "v", "rationale": "r",
+                           "confidence": "low", "key_variable": "k", "falsifier": "f",
+                           "horizon": "12m", "scenarios": legs})
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        if "OUTPUT_SCHEMA=analysis" in prompt:
+            return json.dumps({k: "o" for k in _ANALYSIS_KEYS})
+        if "OUTPUT_SCHEMA=debate" in prompt:
+            return json.dumps({"bull_thesis": "b", "bear_thesis": "be", "final_view": "f"})
+        if "OUTPUT_SCHEMA=alpha" in prompt:
+            if "coherence checks" in prompt:
+                t = self.resynth_tables[min(self.resynth, len(self.resynth_tables) - 1)]
+                self.resynth += 1
+                return self._alpha(t)
+            return self._alpha(self.initial)
+        if "OUTPUT_SCHEMA=critic" in prompt:
+            return json.dumps({"claims_checked": 1, "summary": "ok", "findings": []})
+        return "{}"
+
+
+def _mp_dossier():
+    d = _mock_dossier("MU")
+    d.consensus = None       # no target -> stance stays LLM-declared; multiple_horizon skipped
+    d.quote.price = 200.0    # controls implied returns: price 150 -> -25%, 190 -> -5%, 240 -> +20%
+    return d
+
+
+def test_run_multipass_two_passes_to_coherent():
+    # stance 'unclear' -> bull_below_spot is HIGH(2). Scores: initial 4 -> pass1 2 -> pass2 0.
+    initial = _mp_legs((10, 15), (10, 18), (10, 22))   # prices 150/180/220: non-monotonic(2) + bull -25%(2) = 4
+    pass1 = _mp_legs((10, 19), (10, 17), (10, 15))     # prices 190/170/150: monotonic, bull -5%(2) = 2
+    pass2 = _mp_legs((10, 24), (10, 21), (10, 18))     # prices 240/210/180: monotonic, bull +20% = 0
+    llm = _MultiPassLLM("unclear", initial, [pass1, pass2])
+    r = run(_mp_dossier(), llm, model_used="m", mock=False)
+    assert r.alpha_thesis.coherence_issues == []
+    assert llm.resynth == 2
+
+
+def test_run_multipass_stops_when_no_improvement():
+    initial = _mp_legs((10, 15), (10, 18), (10, 22))   # score 4
+    llm = _MultiPassLLM("unclear", initial, [initial])  # re-synth returns the same table -> no improvement
+    r = run(_mp_dossier(), llm, model_used="m", mock=False)
+    assert llm.resynth == 1                              # stopped after one non-improving pass
+    assert r.alpha_thesis.coherence_issues != []
+
+
+def test_run_multipass_already_coherent_no_resynth():
+    coherent = _mp_legs((10, 24), (10, 21), (10, 18))   # monotonic, bull +20% -> score 0
+    llm = _MultiPassLLM("unclear", coherent, [coherent])
+    r = run(_mp_dossier(), llm, model_used="m", mock=False)
+    assert llm.resynth == 0
+    assert r.alpha_thesis.coherence_issues == []
+
+
+def test_run_multipass_caps_at_two_even_if_still_improving():
+    # stance 'below_consensus' -> bull_below_spot is MEDIUM(1). Scores strictly improve 3->2->1 but a
+    # 3rd pass (would be 0) is blocked by the cap; the loop stops at 2 with residual issues.
+    initial = _mp_legs((10, 15), (10, 18), (10, 22))   # 150/180/220: non-monotonic(2) + bull -25% med(1) = 3
+    pass1 = _mp_legs((10, 21), (10, 24), (10, 26))     # 210/240/260: non-monotonic(2), bull +5% = 2
+    pass2 = _mp_legs((10, 19), (10, 17), (10, 15))     # 190/170/150: monotonic, bull -5% med(1) = 1
+    pass3 = _mp_legs((10, 24), (10, 21), (10, 18))     # would be 0, but never reached
+    llm = _MultiPassLLM("below_consensus", initial, [pass1, pass2, pass3])
+    r = run(_mp_dossier(), llm, model_used="m", mock=False)
+    assert llm.resynth == 2                             # capped
+    assert r.alpha_thesis.coherence_issues != []        # residual issue remains
