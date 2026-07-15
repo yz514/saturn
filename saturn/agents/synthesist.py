@@ -12,7 +12,7 @@ _MAX_OUTPUT_TOKENS = 8192
 _STANCE_BAND = 0.10  # ±10 percentage points around the consensus target defines "in line"
 _COHERENCE_MULTIPLE_TOL = 0.15   # a leg multiple within ±15% of consensus forward P/E is "the forward multiple"
 _COHERENCE_EPS_FLOOR = 0.8       # ... applied to an EPS below 80% of consensus forward EPS is horizon-mismatched
-_PROSE_RETURN_TOL = 0.15         # prose base return may differ from the computed base return by ≤15pp
+_PROSE_RETURN_TOL = 0.02         # prose base return may differ from the computed base return only by rounding
 _PROSE_RETURN_RE = re.compile(r"base case implies[^%]*?([+-]?\d+(?:\.\d+)?)\s*%", re.IGNORECASE)
 
 
@@ -34,17 +34,28 @@ def _resolve_anchor(dossier: CompanyDossier) -> ExpectationAnchor:
     from saturn.analytics.forward import is_reverse_dcf_low_confidence
 
     cons = dossier.consensus
-    if cons is not None and any(v is not None for v in (cons.forward_pe, cons.forward_eps, cons.target_mean)):
-        if cons.forward_pe is not None:
+    if cons is not None and any(v is not None for v in
+                                (cons.forward_pe, cons.forward_eps, cons.target_mean, cons.forward_eps_ntm)):
+        px = dossier.quote.price if dossier.quote else None
+        ntm_pe = (px / cons.forward_eps_ntm
+                  if (px and px > 0 and cons.forward_eps_ntm and cons.forward_eps_ntm > 0) else None)
+        if ntm_pe is not None:
+            metric, value, unit = "NTM P/E", ntm_pe, "x"
+        elif cons.forward_pe is not None:
             metric, value, unit = "Forward P/E", cons.forward_pe, "x"
         elif cons.forward_eps is not None:
             metric, value, unit = "forward EPS", cons.forward_eps, "USD/share"
         else:
             metric, value, unit = "mean price target", cons.target_mean, "USD/share"
         parts: list[str] = []
+        if ntm_pe is not None:
+            blend = (f"; {cons.ntm_weight:.0%} current FY / {1 - cons.ntm_weight:.0%} next FY"
+                     if cons.ntm_weight is not None else "")
+            parts.append(f"NTM P/E {ntm_pe:.1f}x (on blended NTM EPS ${cons.forward_eps_ntm:.2f}{blend})")
         if cons.forward_pe is not None:
-            parts.append(f"forward P/E {cons.forward_pe:.1f}x")
-        if cons.forward_eps is not None and cons.forward_pe is None:
+            ref = f" on FY+1 EPS ${cons.forward_eps:.2f}" if cons.forward_eps is not None else ""
+            parts.append(f"FY+1 P/E {cons.forward_pe:.1f}x{ref}")
+        elif cons.forward_eps is not None and ntm_pe is None:
             parts.append(f"forward EPS ${cons.forward_eps:.2f}/share")
         if cons.target_mean is not None:
             up = f" ({cons.target_upside_pct:+.0%} vs price)" if cons.target_upside_pct is not None else ""
