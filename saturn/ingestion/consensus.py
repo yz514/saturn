@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import yfinance as yf  # noqa: E402  (kept module-level so tests can patch saturn.ingestion.consensus.yf)
 
@@ -267,7 +267,7 @@ def fetch_consensus(ticker: str) -> RawConsensus:
     try:
         ts = info.get("nextFiscalYearEnd")
         if ts:
-            raw.fy0_end = datetime.utcfromtimestamp(int(ts)).date()
+            raw.fy0_end = datetime.fromtimestamp(int(ts), UTC).date()
     except Exception as exc:  # noqa: BLE001 - fiscal-year end is optional
         logger.debug("consensus fiscal-year end unavailable for %s: %s", ticker, exc)
     return raw
