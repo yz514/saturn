@@ -45,3 +45,9 @@ def test_coherence_issue_and_default_empty():
     a = AlphaThesis(anchor=ExpectationAnchor(source="none", text="", confidence="low"),
                     provenance=Provenance(source="Saturn (synthesist)"))
     assert a.coherence_issues == []
+
+
+def test_coherence_issue_accepts_bull_below_spot():
+    from saturn.models import CoherenceIssue
+    issue = CoherenceIssue(check="bull_below_spot", severity="medium", detail="bull below spot")
+    assert issue.check == "bull_below_spot"
