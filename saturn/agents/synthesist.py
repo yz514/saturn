@@ -109,8 +109,8 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
 
 def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["CoherenceIssue"]:
     """Deterministic coherence audit of the priced scenario table (sibling to alpha_completeness).
-    Returns issues in a stable order: monotonicity, prose_vs_computed, multiple_horizon. Pure; any
-    missing data skips that check rather than raising."""
+    Returns issues in a stable order: monotonicity, prose_vs_computed, multiple_horizon,
+    bull_below_spot. Pure; any missing data skips that check rather than raising."""
     from saturn.models import CoherenceIssue
     issues: list[CoherenceIssue] = []
     legs = {s.name: s for s in thesis.scenarios}
@@ -149,6 +149,16 @@ def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["Co
                             f"${s.per_share_value:g} (< {_COHERENCE_EPS_FLOOR:g}× consensus forward "
                             f"EPS ${cons.forward_eps:g})")))
                 break   # one horizon issue per table is enough
+
+    # 4. Bull-below-spot — a "bull" scenario that loses money. Unambiguously wrong unless the stance
+    # is itself bearish (below_consensus), where a below-spot bull can be a deliberate short.
+    if bull is not None and bull.implied_return_pct is not None and bull.implied_return_pct < 0:
+        sev = "medium" if thesis.stance == "below_consensus" else "high"
+        issues.append(CoherenceIssue(
+            check="bull_below_spot", severity=sev,
+            detail=(f"bull scenario returns {bull.implied_return_pct:+.0%} (below spot) despite a "
+                    f"{thesis.stance} stance")))
+
     return issues
 
 

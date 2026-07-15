@@ -270,9 +270,9 @@ def _coh_thesis(legs, rationale=""):
 
 
 def test_coherence_flags_non_monotonic_prices():
-    # bull priced BELOW bear -> high monotonicity issue
-    legs = [_priced_leg("bull", 100.0, -0.1), _priced_leg("base", 150.0, 0.0),
-            _priced_leg("bear", 200.0, 0.2)]
+    # bull priced BELOW bear -> high monotonicity issue (bull has positive return to isolate check)
+    legs = [_priced_leg("bull", 100.0, 0.0), _priced_leg("base", 150.0, 0.5),
+            _priced_leg("bear", 200.0, 1.0)]
     issues = scenario_coherence(_coh_thesis(legs), _dossier())
     assert [i.check for i in issues] == ["monotonicity"]
     assert issues[0].severity == "high"
@@ -335,3 +335,46 @@ def test_coherence_score_zero_when_clean():
     a = AlphaThesis(anchor=ExpectationAnchor(source="none", text="", confidence="low"),
                     provenance=Provenance(source="Saturn (synthesist)"))
     assert _coherence_score(a) == 0
+
+
+def _bull_thesis(bull_ret, stance, bull_price=100.0):
+    # prices monotonic (100>=90>=80) so ONLY the bull_below_spot check can fire; rationale empty so
+    # prose_vs_computed is skipped; _dossier() has no consensus so multiple_horizon is skipped.
+    legs = [_priced_leg("bull", bull_price, bull_ret),
+            _priced_leg("base", 90.0, -0.3), _priced_leg("bear", 80.0, -0.5)]
+    return AlphaThesis(anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
+                       stance=stance, rationale="", confidence="low", scenarios=legs,
+                       provenance=Provenance(source="Saturn (synthesist)"))
+
+
+def test_bull_below_spot_high_for_nonbearish_stances():
+    for stance in ("above_consensus", "in_line_consensus", "unclear"):
+        issues = scenario_coherence(_bull_thesis(-0.19, stance), _dossier())
+        assert [i.check for i in issues] == ["bull_below_spot"]
+        assert issues[0].severity == "high"
+
+
+def test_bull_below_spot_medium_for_below_consensus():
+    issues = scenario_coherence(_bull_thesis(-0.19, "below_consensus"), _dossier())
+    assert [i.check for i in issues] == ["bull_below_spot"]
+    assert issues[0].severity == "medium"
+
+
+def test_bull_at_or_above_spot_no_issue():
+    assert scenario_coherence(_bull_thesis(0.05, "in_line_consensus"), _dossier()) == []
+    assert scenario_coherence(_bull_thesis(0.0, "in_line_consensus"), _dossier()) == []
+
+
+def test_bull_none_return_no_issue():
+    legs = [_priced_leg("bull", 100.0, None), _priced_leg("base", 90.0, -0.3),
+            _priced_leg("bear", 80.0, -0.5)]
+    t = AlphaThesis(anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
+                    stance="in_line_consensus", scenarios=legs,
+                    provenance=Provenance(source="Saturn (synthesist)"))
+    assert scenario_coherence(t, _dossier()) == []
+
+
+def test_bull_below_spot_orders_after_monotonicity():
+    # bull priced BELOW base (non-monotonic) AND bull return < 0 -> two issues, stable order
+    issues = scenario_coherence(_bull_thesis(-0.19, "unclear", bull_price=70.0), _dossier())
+    assert [i.check for i in issues] == ["monotonicity", "bull_below_spot"]
