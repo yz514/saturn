@@ -426,3 +426,53 @@ def test_resynthesize_corrective_hint_omitted_without_consensus():
                           model=None)
     assert "horizon error" not in llm.prompt         # hint guarded off, no crash
     assert "coherence checks" in llm.prompt           # base corrective still present
+
+
+from saturn.agents.synthesist import align_prose_base_return
+
+
+def _align_thesis(rationale="", variant="", base_ret=-0.47):
+    legs = [_priced_leg("base", 100.0, base_ret)]
+    return AlphaThesis(anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
+                       stance="below_consensus", variant=variant, rationale=rationale, confidence="low",
+                       scenarios=legs, provenance=Provenance(source="Saturn (synthesist)"))
+
+
+def test_align_corrects_divergent_rationale():
+    t = _align_thesis(rationale="Our base case implies ~+6% vs the Street's +14%.", base_ret=-0.47)
+    align_prose_base_return(t)
+    assert "-47%" in t.rationale and "+6%" not in t.rationale
+    assert not any(i.check == "prose_vs_computed" for i in scenario_coherence(t, _dossier()))
+
+
+def test_align_noop_within_tolerance():
+    t = _align_thesis(rationale="Our base case implies -40% vs the Street's +14%.", base_ret=-0.47)  # 7pp
+    align_prose_base_return(t)
+    assert "-40%" in t.rationale
+
+
+def test_align_noop_no_cue():
+    t = _align_thesis(rationale="The base case is cautious and execution-dependent.", base_ret=-0.47)
+    align_prose_base_return(t)
+    assert t.rationale == "The base case is cautious and execution-dependent."
+
+
+def test_align_noop_no_base_leg():
+    t = AlphaThesis(anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
+                    stance="below_consensus", rationale="Our base case implies +6% vs Street.",
+                    scenarios=[_priced_leg("bull", 100.0, 0.1)],
+                    provenance=Provenance(source="Saturn (synthesist)"))
+    align_prose_base_return(t)
+    assert "+6%" in t.rationale
+
+
+def test_align_corrects_variant():
+    t = _align_thesis(variant="Base case implies +6% as consensus overreaches.", rationale="", base_ret=-0.47)
+    align_prose_base_return(t)
+    assert "-47%" in t.variant
+
+
+def test_align_positive_computed():
+    t = _align_thesis(rationale="Our base case implies -5% vs the Street.", base_ret=0.12)
+    align_prose_base_return(t)
+    assert "+12%" in t.rationale
