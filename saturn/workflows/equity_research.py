@@ -58,6 +58,7 @@ DEBATE_SYSTEM = (
 )
 
 _MAX_OUTPUT_TOKENS = 8192
+_MAX_COHERENCE_REPAIRS = 2
 
 _CTX_MAX_ANNUAL = 3
 _CTX_MAX_QUARTERS = 4
@@ -391,14 +392,18 @@ def run(
     analysis = analyze(company, llm, model=call_model)
     deb = debate(company, llm, model=call_model)
     alpha = synthesize(analysis, deb, company, llm, model=call_model)
-    # Scenario-coherence gate: if the priced scenario table is internally incoherent (non-monotonic
-    # prices, a rationale base return that contradicts the table, or a forward multiple applied to a
-    # near-term EPS), do ONE corrective re-synthesis and keep it only if strictly more coherent.
-    # Soft-fail keeps the original. Runs before critique so the Critic audits the coherent thesis.
-    if alpha is not None and alpha.coherence_issues:
+    # Scenario-coherence gate: when the priced scenario table is incoherent, re-synthesize (up to
+    # _MAX_COHERENCE_REPAIRS times) and keep each pass only if _coherence_score strictly improves;
+    # stop as soon as a pass fails to improve (bounds cost on tables that can't be repaired, e.g. a
+    # legitimately-bearish thesis whose bull is intrinsically below spot). Runs before critique so
+    # the Critic audits the most-coherent thesis. Soft-fail (None) keeps the current thesis.
+    attempts = 0
+    while alpha is not None and alpha.coherence_issues and attempts < _MAX_COHERENCE_REPAIRS:
+        attempts += 1
         r_alpha = resynthesize_coherent(analysis, deb, company, llm, alpha.coherence_issues, model=call_model)
-        if r_alpha is not None and _coherence_score(r_alpha) < _coherence_score(alpha):
-            alpha = r_alpha
+        if r_alpha is None or _coherence_score(r_alpha) >= _coherence_score(alpha):
+            break
+        alpha = r_alpha
     review = critique(analysis, deb, company, llm, model=call_model, alpha=alpha)
 
     # Self-repair loop: when the Critic finds actionable errors, revise the affected

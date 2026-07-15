@@ -270,9 +270,9 @@ def _coh_thesis(legs, rationale=""):
 
 
 def test_coherence_flags_non_monotonic_prices():
-    # bull priced BELOW bear -> high monotonicity issue
-    legs = [_priced_leg("bull", 100.0, -0.1), _priced_leg("base", 150.0, 0.0),
-            _priced_leg("bear", 200.0, 0.2)]
+    # bull priced BELOW bear -> high monotonicity issue (bull has positive return to isolate check)
+    legs = [_priced_leg("bull", 100.0, 0.0), _priced_leg("base", 150.0, 0.5),
+            _priced_leg("bear", 200.0, 1.0)]
     issues = scenario_coherence(_coh_thesis(legs), _dossier())
     assert [i.check for i in issues] == ["monotonicity"]
     assert issues[0].severity == "high"
@@ -335,3 +335,94 @@ def test_coherence_score_zero_when_clean():
     a = AlphaThesis(anchor=ExpectationAnchor(source="none", text="", confidence="low"),
                     provenance=Provenance(source="Saturn (synthesist)"))
     assert _coherence_score(a) == 0
+
+
+def _bull_thesis(bull_ret, stance, bull_price=100.0):
+    # prices monotonic (100>=90>=80) so ONLY the bull_below_spot check can fire; rationale empty so
+    # prose_vs_computed is skipped; _dossier() has no consensus so multiple_horizon is skipped.
+    legs = [_priced_leg("bull", bull_price, bull_ret),
+            _priced_leg("base", 90.0, -0.3), _priced_leg("bear", 80.0, -0.5)]
+    return AlphaThesis(anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
+                       stance=stance, rationale="", confidence="low", scenarios=legs,
+                       provenance=Provenance(source="Saturn (synthesist)"))
+
+
+def test_bull_below_spot_high_for_nonbearish_stances():
+    for stance in ("above_consensus", "in_line_consensus", "unclear"):
+        issues = scenario_coherence(_bull_thesis(-0.19, stance), _dossier())
+        assert [i.check for i in issues] == ["bull_below_spot"]
+        assert issues[0].severity == "high"
+
+
+def test_bull_below_spot_medium_for_below_consensus():
+    issues = scenario_coherence(_bull_thesis(-0.19, "below_consensus"), _dossier())
+    assert [i.check for i in issues] == ["bull_below_spot"]
+    assert issues[0].severity == "medium"
+
+
+def test_bull_at_or_above_spot_no_issue():
+    assert scenario_coherence(_bull_thesis(0.05, "in_line_consensus"), _dossier()) == []
+    assert scenario_coherence(_bull_thesis(0.0, "in_line_consensus"), _dossier()) == []
+
+
+def test_bull_none_return_no_issue():
+    legs = [_priced_leg("bull", 100.0, None), _priced_leg("base", 90.0, -0.3),
+            _priced_leg("bear", 80.0, -0.5)]
+    t = AlphaThesis(anchor=ExpectationAnchor(source="consensus", text="c", confidence="medium"),
+                    stance="in_line_consensus", scenarios=legs,
+                    provenance=Provenance(source="Saturn (synthesist)"))
+    assert scenario_coherence(t, _dossier()) == []
+
+
+def test_bull_below_spot_orders_after_monotonicity():
+    # bull priced BELOW base (non-monotonic) AND bull return < 0 -> two issues, stable order
+    issues = scenario_coherence(_bull_thesis(-0.19, "unclear", bull_price=70.0), _dossier())
+    assert [i.check for i in issues] == ["monotonicity", "bull_below_spot"]
+
+
+def test_synthesize_system_has_horizon_rule():
+    from saturn.agents.synthesist import SYNTHESIZE_SYSTEM
+    s = SYNTHESIZE_SYSTEM.lower()
+    assert "same horizon" in s and "never apply a forward multiple" in s
+
+
+class _CapLLM:
+    def __init__(self): self.prompt = ""
+    def complete(self, system, prompt, *, model=None, max_tokens=8192):
+        self.prompt = prompt
+        return ('{"stance":"unclear","variant":"v","rationale":"r","confidence":"low",'
+                '"key_variable":"k","falsifier":"f","horizon":"12m","scenarios":[]}')
+
+
+class _FakeSections:
+    def model_dump(self): return {}
+
+
+def test_resynthesize_corrective_includes_arithmetic_hint():
+    from saturn.ingestion.dossier import _mock_dossier
+    from saturn.agents.synthesist import resynthesize_coherent
+    from saturn.models import CoherenceIssue
+    d = _mock_dossier("MU")
+    d.consensus.forward_pe = 38.0
+    d.consensus.forward_eps = 6.18
+    d.driver_model.saturn_eps = 3.24
+    llm = _CapLLM()
+    resynthesize_coherent(_FakeSections(), _FakeSections(), d, llm,
+                          [CoherenceIssue(check="multiple_horizon", severity="medium", detail="x")],
+                          model=None)
+    assert "horizon error" in llm.prompt
+    assert "38x" in llm.prompt and "$6.18" in llm.prompt and "$3.24" in llm.prompt
+
+
+def test_resynthesize_corrective_hint_omitted_without_consensus():
+    from saturn.ingestion.dossier import _mock_dossier
+    from saturn.agents.synthesist import resynthesize_coherent
+    from saturn.models import CoherenceIssue
+    d = _mock_dossier("MU")
+    d.consensus = None
+    llm = _CapLLM()
+    resynthesize_coherent(_FakeSections(), _FakeSections(), d, llm,
+                          [CoherenceIssue(check="monotonicity", severity="high", detail="x")],
+                          model=None)
+    assert "horizon error" not in llm.prompt         # hint guarded off, no crash
+    assert "coherence checks" in llm.prompt           # base corrective still present

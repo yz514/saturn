@@ -109,8 +109,8 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
 
 def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["CoherenceIssue"]:
     """Deterministic coherence audit of the priced scenario table (sibling to alpha_completeness).
-    Returns issues in a stable order: monotonicity, prose_vs_computed, multiple_horizon. Pure; any
-    missing data skips that check rather than raising."""
+    Returns issues in a stable order: monotonicity, prose_vs_computed, multiple_horizon,
+    bull_below_spot. Pure; any missing data skips that check rather than raising."""
     from saturn.models import CoherenceIssue
     issues: list[CoherenceIssue] = []
     legs = {s.name: s for s in thesis.scenarios}
@@ -149,6 +149,16 @@ def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["Co
                             f"${s.per_share_value:g} (< {_COHERENCE_EPS_FLOOR:g}× consensus forward "
                             f"EPS ${cons.forward_eps:g})")))
                 break   # one horizon issue per table is enough
+
+    # 4. Bull-below-spot — a "bull" scenario that loses money. Unambiguously wrong unless the stance
+    # is itself bearish (below_consensus), where a below-spot bull can be a deliberate short.
+    if bull is not None and bull.implied_return_pct is not None and bull.implied_return_pct < 0:
+        sev = "medium" if thesis.stance == "below_consensus" else "high"
+        issues.append(CoherenceIssue(
+            check="bull_below_spot", severity=sev,
+            detail=(f"bull scenario returns {bull.implied_return_pct:+.0%} (below spot) despite a "
+                    f"{thesis.stance} stance")))
+
     return issues
 
 
@@ -181,7 +191,13 @@ SYNTHESIZE_SYSTEM = (
     "time window), a horizon, and exactly three scenarios (bull/base/bear). Each scenario states a "
     "period, a per-share metric with its value and basis, and a multiple with its basis — do NOT "
     "output prices; the system computes price = value x multiple. Keep 'variant' to ONE sentence "
-    "under 35 words. Respond with ONLY a single valid JSON object, no prose, no code fences."
+    "under 35 words. "
+    "CRITICAL — horizon match: the multiple and the per-share value must be the SAME horizon. If you "
+    "use a forward (next-fiscal-year) P/E, pair it with the forward EPS; NEVER apply a forward "
+    "multiple to a trailing or near-term EPS — that mechanically underprices every scenario. Before "
+    "finalizing, verify bull >= base >= bear in implied price and that the base-case return you "
+    "describe matches the base scenario. "
+    "Respond with ONLY a single valid JSON object, no prose, no code fences."
 )
 
 
@@ -292,12 +308,20 @@ def resynthesize_coherent(analysis, debate, dossier: CompanyDossier, llm, issues
         anchor = _resolve_anchor(dossier)
         base_prompt = _synthesize_prompt(analysis, debate, anchor, _company_context(dossier))
         problems = "; ".join(f"[{i.check}] {i.detail}" for i in issues)
+        cons, dm = dossier.consensus, dossier.driver_model
+        hint = ""
+        if cons and cons.forward_pe and cons.forward_eps and dm and dm.saturn_eps:
+            hint = (f" For reference, the stock trades at ~{cons.forward_pe:.0f}x its forward EPS "
+                    f"${cons.forward_eps:.2f} (which equals spot). Applying ~{cons.forward_pe:.0f}x "
+                    f"to a near-term EPS like ${dm.saturn_eps:.2f} yields a price far below spot — "
+                    f"that is the horizon error. Either pair forward EPS with the forward multiple, "
+                    f"or use a near-term multiple (~15-20x) with the near-term EPS.")
         corrective = (
             "\n\nYour previous scenario table failed these coherence checks: " + problems + ". "
             "Regenerate the FULL thesis so that: bull >= base >= bear in implied price; any P/E "
             "multiple matches the horizon of its EPS (do NOT apply a next-fiscal-year multiple to a "
             "near-term EPS); and the base-case return you describe in the rationale matches the base "
-            "scenario you output. Do NOT output prices."
+            "scenario you output. Do NOT output prices." + hint
         )
         strict = ("\n\nIMPORTANT: your previous reply was not valid JSON. Return ONLY a single, "
                   "strictly valid JSON object.")
