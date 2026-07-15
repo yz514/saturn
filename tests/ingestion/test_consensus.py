@@ -188,41 +188,69 @@ def _rev_fund(eps=4.5, rev=90e9, shares=10e9):
 
 
 def test_forward_revenue_accepted_when_consistent():
+    # FY0 == FY1 so the blend is exactly 5.0 / 100e9 regardless of the weight.
     # NTM EPS 5.0 x 10e9 shares / 100e9 rev = 0.5 margin (ok); 100/90-1 = +11% growth (ok).
-    # The revenue + current-FY EPS are accepted together as a horizon-matched pair.
-    raw = RawConsensus(forward_eps=6.2, forward_eps_ntm=5.0, forward_revenue=100e9)
-    c = validate_consensus(raw, _rev_fund(), _quote(50.0))
+    raw = RawConsensus(forward_eps=6.2, eps_fy0=5.0, eps_fy1=5.0,
+                       rev_fy0=100e9, rev_fy1=100e9, fy0_end=_date(2026, 12, 31))
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0), today=_date(2026, 7, 15))
     assert c.forward_revenue == 100e9 and c.forward_eps_ntm == 5.0
+    assert c.ntm_weight is not None
     assert not any("forward_revenue" in r for r in c.rejected)
 
 
 def test_forward_revenue_rejected_when_implausible():
-    # fr 40e9 -> implied margin 50e9/40e9 = 1.25 (>0.6) -> rejected (both fields left None)
-    raw = RawConsensus(forward_eps=6.2, forward_eps_ntm=5.0, forward_revenue=40e9)
-    c = validate_consensus(raw, _rev_fund(), _quote(50.0))
-    assert c.forward_revenue is None and c.forward_eps_ntm is None
+    # fr 40e9 -> implied margin 50e9/40e9 = 1.25 (>0.6) -> revenue rejected.
+    # The NTM EPS survives: the gate guards the REVENUE, not the (independently blended) EPS.
+    raw = RawConsensus(forward_eps=6.2, eps_fy0=5.0, eps_fy1=5.0,
+                       rev_fy0=40e9, rev_fy1=40e9, fy0_end=_date(2026, 12, 31))
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0), today=_date(2026, 7, 15))
+    assert c.forward_revenue is None
+    assert c.forward_eps_ntm == 5.0
     assert any("forward_revenue" in r for r in c.rejected)
 
 
 def test_forward_revenue_no_baseline_rejected():
-    # no Revenues/shares facts -> cannot validate
-    raw = RawConsensus(forward_eps=6.2, forward_eps_ntm=5.0, forward_revenue=100e9)
+    # no Revenues/shares facts -> cannot validate the revenue
+    raw = RawConsensus(forward_eps=6.2, eps_fy0=5.0, eps_fy1=5.0,
+                       rev_fy0=100e9, rev_fy1=100e9, fy0_end=_date(2026, 12, 31))
     fund = Fundamentals(facts=[FinancialFact(
         concept="EarningsPerShareDiluted", value=4.5, unit="USD/shares", fiscal_period="FY2024", provenance=PROV)])
-    c = validate_consensus(raw, fund, _quote(50.0))
+    c = validate_consensus(raw, fund, _quote(50.0), today=_date(2026, 7, 15))
     assert c.forward_revenue is None
     assert any("no baseline" in r for r in c.rejected)
 
 
 def test_forward_revenue_needs_ntm_eps_not_anchor_eps():
-    # The revenue gate is horizon-matched: it validates against the current-FY (NTM) EPS, not the
-    # forward (FY+1) anchor EPS. A valid anchor forward_eps alone does not admit the revenue.
-    raw = RawConsensus(forward_eps=5.0, forward_revenue=100e9)  # no forward_eps_ntm
-    c = validate_consensus(raw, _rev_fund(), _quote(50.0))
-    assert c.forward_eps == 5.0             # anchor EPS still validated for the forward P/E
-    assert c.forward_revenue is None        # revenue not accepted without an NTM EPS baseline
+    # The revenue gate validates against the blended NTM EPS, not the FY+1 anchor EPS. With no FY0/FY1
+    # EPS there is no NTM EPS baseline, so the revenue is not admitted.
+    raw = RawConsensus(forward_eps=5.0, rev_fy0=100e9, rev_fy1=100e9, fy0_end=_date(2026, 12, 31))
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0), today=_date(2026, 7, 15))
+    assert c.forward_eps == 5.0             # anchor EPS still validated for the FY+1 P/E
     assert c.forward_eps_ntm is None
+    assert c.forward_revenue is None
     assert any("no baseline" in r for r in c.rejected)
+
+
+def test_validate_blends_ntm_by_fiscal_year_progress():
+    # AMZN-like: FY0 ends 2026-12-31, today 2026-07-15 -> w ~= 0.46 -> NTM EPS ~= 9.32
+    raw = RawConsensus(forward_eps=9.88, eps_fy0=8.66, eps_fy1=9.88, fy0_end=_date(2026, 12, 31))
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0), today=_date(2026, 7, 15))
+    assert abs(c.forward_eps_ntm - 9.32) < 0.02
+    assert 0.45 < c.ntm_weight < 0.48
+
+
+def test_validate_ntm_is_pure_fy1_when_fiscal_year_already_ended():
+    # MSFT-like: FY0 ended 2026-06-30 -> w == 0 -> NTM EPS == FY1 EPS
+    raw = RawConsensus(forward_eps=19.36, eps_fy0=16.82, eps_fy1=19.36, fy0_end=_date(2026, 6, 30))
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0), today=_date(2026, 7, 15))
+    assert c.forward_eps_ntm == 19.36 and c.ntm_weight == 0.0
+
+
+def test_validate_skips_ntm_without_fiscal_year_end():
+    raw = RawConsensus(forward_eps=6.2, eps_fy0=5.0, eps_fy1=6.0, rev_fy0=100e9, rev_fy1=100e9)
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0), today=_date(2026, 7, 15))
+    assert c.forward_eps_ntm is None and c.forward_revenue is None and c.ntm_weight is None
+    assert any("NTM blend" in r for r in c.rejected)
 
 
 def test_ntm_weight_zero_when_fiscal_year_already_ended():

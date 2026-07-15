@@ -120,7 +120,8 @@ def _estimate_avg(frame, period: str) -> float | None:
 
 
 def validate_consensus(
-    raw: RawConsensus, fundamentals: Fundamentals | None, quote: Quote | None
+    raw: RawConsensus, fundamentals: Fundamentals | None, quote: Quote | None,
+    *, today: date | None = None,
 ) -> ConsensusSnapshot:
     """Gate each raw consensus field against the verified baseline; surface only what
     passes, recording a human-readable reason for each rejection."""
@@ -158,28 +159,35 @@ def validate_consensus(
                 snap.forward_pe = raw.forward_pe if raw.forward_pe is not None else implied_pe
                 snap.peg = raw.peg
 
-    # --- forward revenue + current-FY EPS (consistency gate: implied margin & growth must be sane) ---
-    # The revenue ("0y" row) and EPS (forward_eps_ntm, "0y" row) are a horizon-matched pair — both
-    # ~1 year forward of TTM — so the gate validates them together and feeds them to the driver as a
-    # coherent NTM consensus. They are accepted or rejected as a unit.
-    fr = raw.forward_revenue
-    ntm_eps = raw.forward_eps_ntm
-    if fr is not None:
+    # --- NTM consensus: blend FY0/FY1 by fiscal-year progress ---
+    # The `0y` row alone is only an NTM proxy early in a fiscal year; late in the FY it collapses toward
+    # TTM (understating consensus). The EPS blend stands on its own; the gate below guards only revenue.
+    w = _ntm_weight(raw.fy0_end, today or date.today())
+    ntm_eps = _blend_ntm(w, raw.eps_fy0, raw.eps_fy1)
+    ntm_rev = _blend_ntm(w, raw.rev_fy0, raw.rev_fy1)
+    attempted_ntm = any(v is not None for v in (raw.fy0_end, raw.eps_fy0, raw.eps_fy1, raw.rev_fy0, raw.rev_fy1))
+    if attempted_ntm and ntm_eps is None and ntm_rev is None:
+        rejected.append("NTM blend: unavailable (no fiscal-year-end or incomplete FY0/FY1 estimates)")
+    if ntm_eps is not None:
+        snap.forward_eps_ntm = ntm_eps
+        snap.ntm_weight = w
+
+    # --- forward revenue (consistency gate on the BLENDED figures: implied margin & growth must be sane) ---
+    if ntm_rev is not None:
         idx = _index(fundamentals)
         annual = _annual_periods(idx)
         ttm = _ttm_or_fy(idx, "Revenues")
         shares_fact = _fact(idx, "WeightedAverageSharesDiluted", annual[0]) if annual else None
-        if ntm_eps and ntm_eps > 0 and ttm and ttm[0] > 0 and shares_fact and shares_fact.value > 0 and fr > 0:
-            m_c = ntm_eps * shares_fact.value / fr
-            g_c = fr / ttm[0] - 1
+        if ntm_eps and ntm_eps > 0 and ttm and ttm[0] > 0 and shares_fact and shares_fact.value > 0 and ntm_rev > 0:
+            m_c = ntm_eps * shares_fact.value / ntm_rev
+            g_c = ntm_rev / ttm[0] - 1
             lo, hi = REVENUE_GROWTH_BAND
             if 0 < m_c < REVENUE_MARGIN_CAP and lo <= g_c <= hi:
-                snap.forward_revenue = fr
-                snap.forward_eps_ntm = ntm_eps
+                snap.forward_revenue = ntm_rev
             else:
                 rejected.append(f"forward_revenue: rejected — implies margin {m_c:.0%} / growth {g_c:+.0%}")
         else:
-            rejected.append("forward_revenue: no baseline (shares/revenue/current-FY EPS) to validate")
+            rejected.append("forward_revenue: no baseline (shares/revenue/NTM EPS) to validate")
 
     # --- price targets ---
     tm, th, tl, na = raw.target_mean, raw.target_high, raw.target_low, raw.n_analysts
