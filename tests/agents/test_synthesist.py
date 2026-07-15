@@ -378,3 +378,51 @@ def test_bull_below_spot_orders_after_monotonicity():
     # bull priced BELOW base (non-monotonic) AND bull return < 0 -> two issues, stable order
     issues = scenario_coherence(_bull_thesis(-0.19, "unclear", bull_price=70.0), _dossier())
     assert [i.check for i in issues] == ["monotonicity", "bull_below_spot"]
+
+
+def test_synthesize_system_has_horizon_rule():
+    from saturn.agents.synthesist import SYNTHESIZE_SYSTEM
+    s = SYNTHESIZE_SYSTEM.lower()
+    assert "same horizon" in s and "never apply a forward multiple" in s
+
+
+class _CapLLM:
+    def __init__(self): self.prompt = ""
+    def complete(self, system, prompt, *, model=None, max_tokens=8192):
+        self.prompt = prompt
+        return ('{"stance":"unclear","variant":"v","rationale":"r","confidence":"low",'
+                '"key_variable":"k","falsifier":"f","horizon":"12m","scenarios":[]}')
+
+
+class _FakeSections:
+    def model_dump(self): return {}
+
+
+def test_resynthesize_corrective_includes_arithmetic_hint():
+    from saturn.ingestion.dossier import _mock_dossier
+    from saturn.agents.synthesist import resynthesize_coherent
+    from saturn.models import CoherenceIssue
+    d = _mock_dossier("MU")
+    d.consensus.forward_pe = 38.0
+    d.consensus.forward_eps = 6.18
+    d.driver_model.saturn_eps = 3.24
+    llm = _CapLLM()
+    resynthesize_coherent(_FakeSections(), _FakeSections(), d, llm,
+                          [CoherenceIssue(check="multiple_horizon", severity="medium", detail="x")],
+                          model=None)
+    assert "horizon error" in llm.prompt
+    assert "38x" in llm.prompt and "$6.18" in llm.prompt and "$3.24" in llm.prompt
+
+
+def test_resynthesize_corrective_hint_omitted_without_consensus():
+    from saturn.ingestion.dossier import _mock_dossier
+    from saturn.agents.synthesist import resynthesize_coherent
+    from saturn.models import CoherenceIssue
+    d = _mock_dossier("MU")
+    d.consensus = None
+    llm = _CapLLM()
+    resynthesize_coherent(_FakeSections(), _FakeSections(), d, llm,
+                          [CoherenceIssue(check="monotonicity", severity="high", detail="x")],
+                          model=None)
+    assert "horizon error" not in llm.prompt         # hint guarded off, no crash
+    assert "coherence checks" in llm.prompt           # base corrective still present
