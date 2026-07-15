@@ -273,8 +273,10 @@ def test_run_coherence_gate_softfails_when_resynth_unparseable():
 
 
 class _StalePromptCoherenceLLM:
-    """prose_vs_computed survives the gate, then alpha-repair rewrites the rationale to remove the
-    contradiction. The final thesis must have NO stale coherence issue (run() recomputes)."""
+    """The mock Critic fires an alpha finding so alpha-repair rewrites the rationale to a non-numeric
+    form; the end-of-run coherence recompute then confirms a clean thesis. (Since prose base-return
+    figures are now corrected deterministically in _build_thesis, prose_vs_computed never reaches the
+    gate here.)"""
     def __init__(self):
         self.critic_calls = 0
     def _alpha(self, rationale):
@@ -423,3 +425,37 @@ def test_run_multipass_no_resynth_without_monotonicity():
     r = run(_mp_dossier(), llm, model_used="m", mock=False)
     assert llm.resynth == 0
     assert any(i.check == "bull_below_spot" for i in r.alpha_thesis.coherence_issues)
+
+
+class _EndAlignLLM:
+    """Synthesis prose has no figure (coherent table -> gate doesn't fire); the alpha-repair loop then
+    rewrites the rationale to REINTRODUCE a divergent figure (+30%). Only the end-of-run
+    align_prose_base_return corrects it — guards that call site."""
+    def __init__(self):
+        self.critic_calls = 0
+    def complete(self, system, prompt, *, model=None, max_tokens=2000):
+        if "OUTPUT_SCHEMA=analysis" in prompt:
+            return json.dumps({k: "o" for k in _ANALYSIS_KEYS})
+        if "OUTPUT_SCHEMA=debate" in prompt:
+            return json.dumps({"bull_thesis": "b", "bear_thesis": "be", "final_view": "f"})
+        if "OUTPUT_SCHEMA=alpha" in prompt:
+            return json.dumps({"stance": "below_consensus", "variant": "v", "rationale": "r",
+                               "confidence": "low", "key_variable": "k", "falsifier": "f",
+                               "horizon": "12m", "scenarios": _mp_legs((10, 24), (10, 15), (10, 10))})
+        if "OUTPUT_SCHEMA=revise_alpha" in prompt:
+            return json.dumps({"rationale": "Our base case implies +30% vs the Street."})
+        if "OUTPUT_SCHEMA=critic" in prompt:
+            self.critic_calls += 1
+            finding = [{"claim": "x", "section": "alpha_thesis", "category": "unsupported_alpha_inference",
+                        "verdict": "unsupported", "evidence": "e", "severity": "high"}]
+            return json.dumps({"claims_checked": 1, "summary": "s",
+                               "findings": finding if self.critic_calls == 1 else []})
+        return "{}"
+
+
+def test_run_end_of_run_align_corrects_repaired_prose():
+    # base priced 150 vs quote 200 -> -25%; alpha-repair injects "+30%"; end-of-run align -> "-25%".
+    r = run(_mp_dossier(), _EndAlignLLM(), model_used="m", mock=False)
+    assert "+30%" not in r.alpha_thesis.rationale
+    assert "-25%" in r.alpha_thesis.rationale
+    assert not any(i.check == "prose_vs_computed" for i in r.alpha_thesis.coherence_issues)

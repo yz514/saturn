@@ -476,3 +476,25 @@ def test_align_positive_computed():
     t = _align_thesis(rationale="Our base case implies -5% vs the Street.", base_ret=0.12)
     align_prose_base_return(t)
     assert "+12%" in t.rationale
+
+
+def test_build_thesis_wires_prose_alignment():
+    # guards that align_prose_base_return is actually CALLED inside _build_thesis (isolation unit
+    # tests would still pass if the call were removed). Divergent prose -> corrected + no prose issue.
+    from saturn.agents.synthesist import _build_thesis, _resolve_anchor
+    from saturn.models import Quote
+    d = _dossier(quote=Quote(price=200.0, provenance=Provenance(source="yfinance")))
+    data = {"stance": "below_consensus", "variant": "v",
+            "rationale": "Our base case implies ~+6% vs the Street.", "confidence": "low",
+            "key_variable": "k", "falsifier": "f", "horizon": "12m",
+            "scenarios": [
+                {"name": "bull", "period": "FY", "driver": "d", "metric": "EPS",
+                 "metric_basis": "adjusted", "per_share_value": 10.0, "multiple": 24.0, "multiple_basis": "P/E"},
+                {"name": "base", "period": "FY", "driver": "d", "metric": "EPS",
+                 "metric_basis": "adjusted", "per_share_value": 10.0, "multiple": 10.0, "multiple_basis": "P/E"},
+                {"name": "bear", "period": "FY", "driver": "d", "metric": "EPS",
+                 "metric_basis": "adjusted", "per_share_value": 10.0, "multiple": 8.0, "multiple_basis": "P/E"}]}
+    t = _build_thesis(data, _resolve_anchor(d), d)      # base priced 100 -> -50% return
+    assert "+6%" not in t.rationale                      # corrected inside _build_thesis
+    assert "-50%" in t.rationale
+    assert not any(i.check == "prose_vs_computed" for i in t.coherence_issues)
