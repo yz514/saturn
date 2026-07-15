@@ -59,12 +59,10 @@ def compute_driver_model(fundamentals, quote, consensus, *, growth_override: flo
 
     saturn_eps = rev_ttm * (1 + g) * margin / shares
 
-    # Prefer the horizon-matched current-FY (NTM) consensus EPS so the gap and waterfall compare
-    # like-for-like against Saturn's 1-year-forward bridge. Fall back to the forward (FY+1) EPS when
-    # the NTM estimate is unavailable (preserves behavior for names without an earnings-estimate table).
-    consensus_eps = None
-    if consensus is not None:
-        consensus_eps = consensus.forward_eps_ntm or consensus.forward_eps
+    # Only the horizon-correct blended NTM EPS is comparable to Saturn's 1-year-forward bridge. There is
+    # deliberately NO fallback to the FY+1 `forward_eps`: that is up to two years forward and silently
+    # reintroduces the horizon bug. No NTM EPS => no consensus comparison.
+    consensus_eps = consensus.forward_eps_ntm if consensus is not None else None
     eps_gap = eps_gap_pct = implied_g = implied_m = None
     consensus_revenue = consensus_growth = consensus_margin = None
     gap_from_growth = gap_from_margin = None
@@ -82,8 +80,10 @@ def compute_driver_model(fundamentals, quote, consensus, *, growth_override: flo
             consensus_revenue = fr
             consensus_growth = fr / rev_ttm - 1
             consensus_margin = consensus_eps * shares / fr
-            gap_from_growth = rev_ttm * (consensus_growth - g) * margin / shares
-            gap_from_margin = rev_ttm * (1 + consensus_growth) * (consensus_margin - margin) / shares
+            # Signed to match the displayed gap: gap_from_growth + gap_from_margin == eps_gap
+            # (= saturn_eps - consensus_eps), so "+0.71 above consensus: +0.08 growth, +0.63 margin".
+            gap_from_growth = rev_ttm * (g - consensus_growth) * margin / shares
+            gap_from_margin = rev_ttm * (1 + consensus_growth) * (margin - consensus_margin) / shares
 
     return DriverModel(
         horizon="NTM",
