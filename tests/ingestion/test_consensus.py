@@ -143,26 +143,26 @@ def test_fetch_consensus_maps_info_fields(monkeypatch):
     assert raw.target_mean == 314.0 and raw.rating == "buy" and raw.n_analysts == 42
 
 
-def test_fetch_consensus_reads_forward_revenue(monkeypatch):
+def test_fetch_consensus_reads_both_years_and_fiscal_year_end(monkeypatch):
     import pandas as pd
     from saturn.ingestion import consensus as C
-    # Both the revenue and current-FY EPS come from the "0y" row (horizon-matched, ~NTM).
-    rev_df = pd.DataFrame({"avg": [70e9]}, index=["0y"])
-    eps_df = pd.DataFrame({"avg": [5.5]}, index=["0y"])
+    rev_df = pd.DataFrame({"avg": [70e9, 84e9]}, index=["0y", "+1y"])
+    eps_df = pd.DataFrame({"avg": [5.5, 6.6]}, index=["0y", "+1y"])
 
     class _T:
-        info = {"forwardEps": 5.0}
+        info = {"forwardEps": 6.6, "nextFiscalYearEnd": 1798675200}   # 2026-12-31 UTC
         earnings_history = None
         revenue_estimate = rev_df
         earnings_estimate = eps_df
 
     monkeypatch.setattr(C, "yf", type("YF", (), {"Ticker": staticmethod(lambda t: _T())}))
     raw = C.fetch_consensus("X")
-    assert raw.forward_revenue == 70e9
-    assert raw.forward_eps_ntm == 5.5
+    assert raw.rev_fy0 == 70e9 and raw.rev_fy1 == 84e9
+    assert raw.eps_fy0 == 5.5 and raw.eps_fy1 == 6.6
+    assert raw.fy0_end is not None and raw.fy0_end.year == 2026
 
 
-def test_fetch_consensus_forward_revenue_defensive(monkeypatch):
+def test_fetch_consensus_estimate_sources_defensive(monkeypatch):
     from saturn.ingestion import consensus as C
 
     class _T:
@@ -174,7 +174,10 @@ def test_fetch_consensus_forward_revenue_defensive(monkeypatch):
             raise RuntimeError("analysis endpoint down")
 
     monkeypatch.setattr(C, "yf", type("YF", (), {"Ticker": staticmethod(lambda t: _T())}))
-    assert C.fetch_consensus("X").forward_revenue is None
+    raw = C.fetch_consensus("X")          # must not raise
+    assert raw.rev_fy0 is None and raw.rev_fy1 is None
+    assert raw.eps_fy0 is None and raw.eps_fy1 is None
+    assert raw.fy0_end is None
 
 
 def _rev_fund(eps=4.5, rev=90e9, shares=10e9):
