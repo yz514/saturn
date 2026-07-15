@@ -37,11 +37,11 @@ _ALPHA = json.dumps(
         "horizon": "next 2 quarters",
         "scenarios": [
             {"name": "bull", "period": "FY2027", "driver": "[MOCK]", "metric": "EPS",
-             "metric_basis": "adjusted", "per_share_value": 13.0, "multiple": 18.0, "multiple_basis": "P/E"},
+             "metric_basis": "adjusted", "per_share_value": 6.0, "multiple": 175.0, "multiple_basis": "P/E"},
             {"name": "base", "period": "FY2027", "driver": "[MOCK]", "metric": "EPS",
-             "metric_basis": "adjusted", "per_share_value": 10.0, "multiple": 15.0, "multiple_basis": "P/E"},
+             "metric_basis": "adjusted", "per_share_value": 5.0, "multiple": 160.0, "multiple_basis": "P/E"},
             {"name": "bear", "period": "FY2027", "driver": "[MOCK]", "metric": "EPS",
-             "metric_basis": "adjusted", "per_share_value": 6.0, "multiple": 10.0, "multiple_basis": "P/E"},
+             "metric_basis": "adjusted", "per_share_value": 3.5, "multiple": 130.0, "multiple_basis": "P/E"},
         ],
     }
 )

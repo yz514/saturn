@@ -76,7 +76,7 @@ def test_run_populates_alpha_thesis():
     r = run(_mock_dossier("NVDA"), MockLLMClient(), model_used="mock", mock=True)
     assert r.alpha_thesis is not None and len(r.alpha_thesis.scenarios) == 3
     base = next(s for s in r.alpha_thesis.scenarios if s.name == "base")
-    assert base.implied_price == 150.0            # 10 × 15 from the mock
+    assert base.implied_price == 800.0            # 5 × 160 from the mock
 
 
 _ALPHA_JSON = json.dumps({
