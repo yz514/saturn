@@ -162,6 +162,28 @@ def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["Co
     return issues
 
 
+def align_prose_base_return(thesis: AlphaThesis) -> None:
+    """Correct a stated base-case return in the prose to match the computed base scenario, in place.
+    Mirrors deterministic stance derivation: the LLM owns the argument, code owns the number. Uses the
+    same cue/tolerance as the prose_vs_computed check, so afterwards that check cannot fire on a
+    parseable, divergent figure. No-ops when there is no base leg / computed return, no cue, or the
+    figure is already within tolerance."""
+    base = next((s for s in thesis.scenarios if s.name == "base"), None)
+    if base is None or base.implied_return_pct is None:
+        return
+    computed = f"{base.implied_return_pct * 100:+.0f}"          # e.g. "-47" or "+12"
+
+    def _fix(text: str) -> str:
+        m = _PROSE_RETURN_RE.search(text)
+        if m and abs(float(m.group(1)) / 100.0 - base.implied_return_pct) > _PROSE_RETURN_TOL:
+            return _PROSE_RETURN_RE.sub(lambda mm: mm.group(0).replace(mm.group(1), computed, 1),
+                                        text, count=1)
+        return text
+
+    thesis.variant = _fix(thesis.variant)
+    thesis.rationale = _fix(thesis.rationale)
+
+
 def apply_alpha_corrections(alpha: AlphaThesis, corrections: dict) -> AlphaThesis:
     """Splice corrected prose fields into the alpha thesis and recompute completeness. Only
     ALPHA_PROSE_FIELDS are updated; stance/stance_basis/anchor/scenarios are carried over verbatim
@@ -266,6 +288,7 @@ def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier
         scenarios=legs,
         provenance=Provenance(source="Saturn (synthesist)"),
     )
+    align_prose_base_return(thesis)
     thesis.incompleteness = alpha_completeness(thesis)
     thesis.coherence_issues = scenario_coherence(thesis, dossier)
     return thesis

@@ -15,7 +15,8 @@ from saturn.agents.critic import (
 )
 from saturn.agents.guidance import extract_guidance
 from saturn.agents.synthesist import (
-    _coherence_score, apply_alpha_corrections, resynthesize_coherent, scenario_coherence, synthesize,
+    _coherence_score, align_prose_base_return, apply_alpha_corrections, resynthesize_coherent,
+    scenario_coherence, synthesize,
 )
 from saturn.analytics.driver import compute_driver_model
 from saturn.llm.base import LLMClient
@@ -392,13 +393,15 @@ def run(
     analysis = analyze(company, llm, model=call_model)
     deb = debate(company, llm, model=call_model)
     alpha = synthesize(analysis, deb, company, llm, model=call_model)
-    # Scenario-coherence gate: when the priced scenario table is incoherent, re-synthesize (up to
-    # _MAX_COHERENCE_REPAIRS times) and keep each pass only if _coherence_score strictly improves;
-    # stop as soon as a pass fails to improve (bounds cost on tables that can't be repaired, e.g. a
-    # legitimately-bearish thesis whose bull is intrinsically below spot). Runs before critique so
-    # the Critic audits the most-coherent thesis. Soft-fail (None) keeps the current thesis.
+    # Scenario-coherence gate: re-synthesize (up to _MAX_COHERENCE_REPAIRS times) ONLY for a
+    # monotonicity issue (a gross ordering error the LLM can fix), keeping each pass only if
+    # _coherence_score strictly improves; stop on no improvement. prose_vs_computed is fixed
+    # deterministically in _build_thesis; bull_below_spot / multiple_horizon are accepted as an
+    # honest banner. Runs before critique. Soft-fail (None) keeps the current thesis.
     attempts = 0
-    while alpha is not None and alpha.coherence_issues and attempts < _MAX_COHERENCE_REPAIRS:
+    while (alpha is not None
+           and any(i.check == "monotonicity" for i in alpha.coherence_issues)
+           and attempts < _MAX_COHERENCE_REPAIRS):
         attempts += 1
         r_alpha = resynthesize_coherent(analysis, deb, company, llm, alpha.coherence_issues, model=call_model)
         if r_alpha is None or _coherence_score(r_alpha) >= _coherence_score(alpha):
@@ -443,6 +446,7 @@ def run(
     # reflects the shipped prose, never a stale warning. Scenarios are never repaired, so
     # monotonicity/multiple_horizon are stable; only prose_vs_computed can change here.
     if alpha is not None:
+        align_prose_base_return(alpha)          # re-correct any base return the prose-repair rewrote
         alpha.coherence_issues = scenario_coherence(alpha, company)
 
     return ResearchReport(
