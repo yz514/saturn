@@ -23,6 +23,7 @@ PE_CONSISTENCY_TOL = 0.05         # |forward_pe - price/forward_eps| / (price/fo
 REVENUE_MARGIN_CAP = 0.6          # implied consensus net margin must be below this
 REVENUE_GROWTH_BAND = (-0.5, 1.0)  # implied consensus revenue growth must be within this
 
+_DAYS_PER_MONTH = 30.44           # average month length, for fiscal-year-progress weighting
 _SOURCE = "yfinance (estimate)"
 
 
@@ -88,6 +89,23 @@ def _trailing_eps_baseline(fundamentals: Fundamentals | None) -> float | None:
     if candidates:
         return max(candidates)
     return _latest_fy_eps(fundamentals)
+
+
+def _ntm_weight(fy0_end: date | None, today: date) -> float | None:
+    """FY0's share of the next twelve months. The `0y` estimate is a valid NTM proxy only early in a
+    fiscal year; late in the FY it collapses toward TTM. None when the fiscal-year end is unknown."""
+    if fy0_end is None:
+        return None
+    months_left = max(0.0, (fy0_end - today).days / _DAYS_PER_MONTH)
+    return min(1.0, months_left / 12.0)
+
+
+def _blend_ntm(w: float | None, v0: float | None, v1: float | None) -> float | None:
+    """Fiscal-year-progress-weighted next-twelve-months value: w*FY0 + (1-w)*FY1.
+    None unless the weight and BOTH fiscal years are known."""
+    if w is None or v0 is None or v1 is None:
+        return None
+    return w * v0 + (1.0 - w) * v1
 
 
 def validate_consensus(

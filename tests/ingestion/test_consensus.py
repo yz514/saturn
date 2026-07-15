@@ -1,4 +1,6 @@
-from saturn.ingestion.consensus import RawConsensus, validate_consensus
+from datetime import date as _date
+
+from saturn.ingestion.consensus import RawConsensus, validate_consensus, _ntm_weight, _blend_ntm
 from saturn.models import FinancialFact, Fundamentals, Provenance, Quote
 
 PROV = Provenance(source="SEC EDGAR")
@@ -218,3 +220,34 @@ def test_forward_revenue_needs_ntm_eps_not_anchor_eps():
     assert c.forward_revenue is None        # revenue not accepted without an NTM EPS baseline
     assert c.forward_eps_ntm is None
     assert any("no baseline" in r for r in c.rejected)
+
+
+def test_ntm_weight_zero_when_fiscal_year_already_ended():
+    # MSFT case: FY0 ended 2026-06-30, today 2026-07-15 -> nothing of FY0 remains
+    assert _ntm_weight(_date(2026, 6, 30), _date(2026, 7, 15)) == 0.0
+
+
+def test_ntm_weight_mid_year():
+    # AMZN case: FY0 ends 2026-12-31, today 2026-07-15 -> ~5.6 months left -> ~0.46
+    w = _ntm_weight(_date(2026, 12, 31), _date(2026, 7, 15))
+    assert 0.45 < w < 0.48
+
+
+def test_ntm_weight_clamps_to_one_beyond_twelve_months():
+    assert _ntm_weight(_date(2028, 1, 1), _date(2026, 7, 15)) == 1.0
+
+
+def test_ntm_weight_none_without_fiscal_year_end():
+    assert _ntm_weight(None, _date(2026, 7, 15)) is None
+
+
+def test_blend_ntm_endpoints_and_midpoint():
+    assert _blend_ntm(0.0, 8.66, 9.88) == 9.88          # FY0 elapsed -> pure FY1
+    assert _blend_ntm(1.0, 8.66, 9.88) == 8.66          # FY0 entirely ahead -> pure FY0
+    assert abs(_blend_ntm(0.4627, 8.66, 9.88) - 9.32) < 0.01
+
+
+def test_blend_ntm_none_when_any_input_missing():
+    assert _blend_ntm(None, 8.66, 9.88) is None
+    assert _blend_ntm(0.5, None, 9.88) is None
+    assert _blend_ntm(0.5, 8.66, None) is None
