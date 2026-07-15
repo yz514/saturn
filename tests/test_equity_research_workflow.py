@@ -366,10 +366,10 @@ def _mp_dossier():
 
 
 def test_run_multipass_two_passes_to_coherent():
-    # stance 'unclear' -> bull_below_spot is HIGH(2). Scores: initial 4 -> pass1 2 -> pass2 0.
-    initial = _mp_legs((10, 15), (10, 18), (10, 22))   # prices 150/180/220: non-monotonic(2) + bull -25%(2) = 4
-    pass1 = _mp_legs((10, 19), (10, 17), (10, 15))     # prices 190/170/150: monotonic, bull -5%(2) = 2
-    pass2 = _mp_legs((10, 24), (10, 21), (10, 18))     # prices 240/210/180: monotonic, bull +20% = 0
+    # monotonicity-only trigger: mono persists through pass1, fixed in pass2 (stance 'unclear').
+    initial = _mp_legs((10, 15), (10, 18), (10, 22))   # 150/180/220: non-monotonic(2) + bull -25%(2) = 4
+    pass1 = _mp_legs((10, 21), (10, 24), (10, 26))     # 210/240/260: non-monotonic(2), bull +5% above = 2
+    pass2 = _mp_legs((10, 24), (10, 21), (10, 18))     # 240/210/180: monotonic, bull +20% = 0
     llm = _MultiPassLLM("unclear", initial, [pass1, pass2])
     r = run(_mp_dossier(), llm, model_used="m", mock=False)
     assert r.alpha_thesis.coherence_issues == []
@@ -392,14 +392,34 @@ def test_run_multipass_already_coherent_no_resynth():
     assert r.alpha_thesis.coherence_issues == []
 
 
+def _mp_cons_dossier():
+    # like _mp_dossier but WITH a consensus (forward_pe/forward_eps for multiple_horizon; target_mean
+    # None so stance stays LLM-declared) — lets a monotonicity issue persist across two improving passes.
+    from saturn.models import ConsensusSnapshot, Provenance
+    d = _mock_dossier("MU")
+    d.consensus = ConsensusSnapshot(forward_pe=20.0, forward_eps=10.0,
+                                    provenance=Provenance(source="yfinance (estimate)"))
+    d.quote.price = 200.0
+    return d
+
+
 def test_run_multipass_caps_at_two_even_if_still_improving():
-    # stance 'below_consensus' -> bull_below_spot is MEDIUM(1). Scores strictly improve 3->2->1 but a
-    # 3rd pass (would be 0) is blocked by the cap; the loop stops at 2 with residual issues.
-    initial = _mp_legs((10, 15), (10, 18), (10, 22))   # 150/180/220: non-monotonic(2) + bull -25% med(1) = 3
-    pass1 = _mp_legs((10, 21), (10, 24), (10, 26))     # 210/240/260: non-monotonic(2), bull +5% = 2
-    pass2 = _mp_legs((10, 19), (10, 17), (10, 15))     # 190/170/150: monotonic, bull -5% med(1) = 1
-    pass3 = _mp_legs((10, 24), (10, 21), (10, 18))     # would be 0, but never reached
+    # stance 'below_consensus'; consensus fwd_pe=20/fwd_eps=10. Scores 4->3->2, mono present throughout,
+    # so the cap (not "monotonicity resolved") is the binding stop; a 3rd pass (->0) is never reached.
+    initial = _mp_legs((5, 20), (10, 18), (10, 22))    # 100/180/220: non-mono(2)+bull -50% med(1)+horizon(bull 20x,EPS5<8)(1)=4
+    pass1 = _mp_legs((5, 30), (5, 40), (5, 44))        # 150/200/220: non-mono(2)+bull -25% med(1), no horizon (mults 30/40/44) = 3
+    pass2 = _mp_legs((5, 50), (5, 48), (5, 52))        # 250/240/260: non-mono(2), bull +25% above, no horizon = 2
+    pass3 = _mp_legs((10, 24), (10, 21), (10, 18))     # would be 0, never reached
     llm = _MultiPassLLM("below_consensus", initial, [pass1, pass2, pass3])
+    r = run(_mp_cons_dossier(), llm, model_used="m", mock=False)
+    assert llm.resynth == 2                             # capped (not "monotonicity resolved")
+    assert any(i.check == "monotonicity" for i in r.alpha_thesis.coherence_issues)
+
+
+def test_run_multipass_no_resynth_without_monotonicity():
+    # monotonic table whose only issue is bull_below_spot -> the mono-only trigger does NOT fire.
+    table = _mp_legs((10, 19), (10, 17), (10, 15))     # 190/170/150 monotonic, bull -5% below spot (high)
+    llm = _MultiPassLLM("unclear", table, [table])
     r = run(_mp_dossier(), llm, model_used="m", mock=False)
-    assert llm.resynth == 2                             # capped
-    assert r.alpha_thesis.coherence_issues != []        # residual issue remains
+    assert llm.resynth == 0
+    assert any(i.check == "bull_below_spot" for i in r.alpha_thesis.coherence_issues)
