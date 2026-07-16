@@ -58,6 +58,15 @@ def research(
         typer.echo(str(exc), err=True)
         raise typer.Exit(1)
 
+    # Without as-reported facts the Critic can ground nothing, so a report would be unguarded — not
+    # merely thin. Refuse before spending any LLM call, and name the source that came back empty.
+    if not (company.fundamentals and company.fundamentals.facts):
+        typer.echo(f"{ticker}: insufficient data to research.", err=True)
+        for g in company.gaps:
+            typer.echo(f"  {g.source}: {g.reason}", err=True)
+        typer.echo("No report written.", err=True)
+        raise typer.Exit(1)
+
     try:
         report = run(company, llm, model_used=model_used, mock=mock)
     except LLMResponseError as exc:
