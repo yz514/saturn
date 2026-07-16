@@ -459,6 +459,23 @@ def test_parse_companyfacts_raises_for_a_foreign_private_issuer():
     assert "20-F" in msg and "10-K/10-Q" in msg      # the reason must explain WHY
 
 
+def test_parse_companyfacts_reason_names_the_real_cause_when_forms_are_domestic():
+    # 10-Q rows ARE present, but every quarterly row is a YTD-cumulative duration and gets dropped.
+    # The reason must NOT claim "Saturn reads 10-K/10-Q only" -- these ARE 10-K/10-Q.
+    import pytest
+    from saturn.ingestion.errors import DataUnavailable
+    payload = {"facts": {"us-gaap": {"NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+        {"start": "2024-12-01", "end": "2025-05-31", "val": 250, "fy": 2025, "fp": "Q2",
+         "form": "10-Q", "filed": "2025-06-20"},
+    ]}}}}}
+    with pytest.raises(DataUnavailable) as exc:
+        _parse_companyfacts(payload)
+    msg = str(exc.value)
+    assert "10-Q" in msg                       # it still reports what it saw
+    assert "reads 10-K/10-Q only" not in msg   # ...but does NOT misdiagnose it as a form mismatch
+    assert "concepts" in msg or "period" in msg
+
+
 def test_parse_companyfacts_raises_without_any_xbrl_facts():
     import pytest
     from saturn.ingestion.errors import DataUnavailable

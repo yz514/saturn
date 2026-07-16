@@ -216,15 +216,21 @@ def _parse_companyfacts(raw: dict, *, max_years: int = 4, max_quarters: int = 8)
             fy, fp = key
             _append_fact(facts, canonical, unit, f"{fp} FY{fy}", quarterly[key], url)
     if not facts:
-        # Zero facts is NOT success. Say what was actually there so the recorded gap explains itself:
-        # a foreign private issuer (20-F/6-K) has plenty of us-gaap rows, all dropped by the
-        # 10-K/10-Q form filters above.
+        # Zero facts is NOT success. Say what was actually there so the recorded gap explains itself —
+        # and diagnose the RIGHT cause: a foreign private issuer (20-F/6-K) has plenty of us-gaap rows
+        # that the 10-K/10-Q filters drop, which is a different problem from domestic rows that simply
+        # didn't match an expected concept or period shape.
         n_rows, forms = _survey_forms(raw)
         if n_rows == 0:
             raise DataUnavailable("no XBRL facts published for this company")
+        seen = ", ".join(forms)
+        if not any(f.startswith(("10-K", "10-Q")) for f in forms):
+            raise DataUnavailable(
+                f"0 usable facts from {n_rows:,} XBRL rows (forms seen: {seen}); "
+                f"Saturn reads 10-K/10-Q only")
         raise DataUnavailable(
-            f"0 usable facts from {n_rows:,} XBRL rows (forms seen: {', '.join(forms)}); "
-            f"Saturn reads 10-K/10-Q only")
+            f"0 usable facts from {n_rows:,} XBRL rows (forms seen: {seen}); "
+            f"no rows matched the expected concepts or period shapes")
     return Fundamentals(facts=facts)
 
 
