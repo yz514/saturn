@@ -172,6 +172,21 @@ def _row_rank(row: dict, *, annual: bool) -> tuple[int, str, str]:
     return (is_quarter, end, filed)
 
 
+def _survey_forms(blob: dict) -> tuple[int, list[str]]:
+    """Count us-gaap XBRL rows and the distinct SEC forms they came from — used to explain WHY an
+    extraction produced nothing. Pure; (0, []) when the blob carries no us-gaap facts."""
+    forms: set[str] = set()
+    n = 0
+    for tag_block in ((blob.get("facts") or {}).get("us-gaap") or {}).values():
+        for rows in (tag_block.get("units") or {}).values():
+            for row in rows:
+                n += 1
+                form = row.get("form")
+                if form:
+                    forms.add(str(form))
+    return n, sorted(forms)
+
+
 def _parse_companyfacts(raw: dict, *, max_years: int = 4, max_quarters: int = 8) -> Fundamentals:
     """Parse a companyfacts JSON into multi-year as-reported Fundamentals."""
     cik = raw.get("cik")
@@ -200,6 +215,16 @@ def _parse_companyfacts(raw: dict, *, max_years: int = 4, max_quarters: int = 8)
         for key in sorted(quarterly.keys(), key=_quarter_sort_key, reverse=True)[:max_quarters]:
             fy, fp = key
             _append_fact(facts, canonical, unit, f"{fp} FY{fy}", quarterly[key], url)
+    if not facts:
+        # Zero facts is NOT success. Say what was actually there so the recorded gap explains itself:
+        # a foreign private issuer (20-F/6-K) has plenty of us-gaap rows, all dropped by the
+        # 10-K/10-Q form filters above.
+        n_rows, forms = _survey_forms(raw)
+        if n_rows == 0:
+            raise DataUnavailable("no XBRL facts published for this company")
+        raise DataUnavailable(
+            f"0 usable facts from {n_rows:,} XBRL rows (forms seen: {', '.join(forms)}); "
+            f"Saturn reads 10-K/10-Q only")
     return Fundamentals(facts=facts)
 
 
