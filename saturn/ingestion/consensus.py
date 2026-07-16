@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 
 import yfinance as yf  # noqa: E402  (kept module-level so tests can patch saturn.ingestion.consensus.yf)
 
@@ -23,6 +23,7 @@ PE_CONSISTENCY_TOL = 0.05         # |forward_pe - price/forward_eps| / (price/fo
 REVENUE_MARGIN_CAP = 0.6          # implied consensus net margin must be below this
 REVENUE_GROWTH_BAND = (-0.5, 1.0)  # implied consensus revenue growth must be within this
 
+_DAYS_PER_MONTH = 30.44           # average month length, for fiscal-year-progress weighting
 _SOURCE = "yfinance (estimate)"
 
 
@@ -39,8 +40,11 @@ class RawConsensus:
     n_analysts: int | None = None
     last_actual_eps: float | None = None
     last_estimate_eps: float | None = None
-    forward_revenue: float | None = None
-    forward_eps_ntm: float | None = None
+    eps_fy0: float | None = None
+    eps_fy1: float | None = None
+    rev_fy0: float | None = None
+    rev_fy1: float | None = None
+    fy0_end: date | None = None
 
 
 def _latest_fy_eps(fundamentals: Fundamentals | None) -> float | None:
@@ -90,8 +94,34 @@ def _trailing_eps_baseline(fundamentals: Fundamentals | None) -> float | None:
     return _latest_fy_eps(fundamentals)
 
 
+def _ntm_weight(fy0_end: date | None, today: date) -> float | None:
+    """FY0's share of the next twelve months. The `0y` estimate is a valid NTM proxy only early in a
+    fiscal year; late in the FY it collapses toward TTM. None when the fiscal-year end is unknown."""
+    if fy0_end is None:
+        return None
+    months_left = max(0.0, (fy0_end - today).days / _DAYS_PER_MONTH)
+    return min(1.0, months_left / 12.0)
+
+
+def _blend_ntm(w: float | None, v0: float | None, v1: float | None) -> float | None:
+    """Fiscal-year-progress-weighted next-twelve-months value: w*FY0 + (1-w)*FY1.
+    None unless the weight and BOTH fiscal years are known."""
+    if w is None or v0 is None or v1 is None:
+        return None
+    return w * v0 + (1.0 - w) * v1
+
+
+def _estimate_avg(frame, period: str) -> float | None:
+    """Read one period's `avg` from a yfinance estimate table; None when absent or NaN."""
+    if frame is None or "avg" not in getattr(frame, "columns", []) or period not in getattr(frame, "index", []):
+        return None
+    v = frame.loc[period, "avg"]
+    return float(v) if v is not None and float(v) == float(v) else None      # reject NaN
+
+
 def validate_consensus(
-    raw: RawConsensus, fundamentals: Fundamentals | None, quote: Quote | None
+    raw: RawConsensus, fundamentals: Fundamentals | None, quote: Quote | None,
+    *, today: date | None = None,
 ) -> ConsensusSnapshot:
     """Gate each raw consensus field against the verified baseline; surface only what
     passes, recording a human-readable reason for each rejection."""
@@ -129,28 +159,37 @@ def validate_consensus(
                 snap.forward_pe = raw.forward_pe if raw.forward_pe is not None else implied_pe
                 snap.peg = raw.peg
 
-    # --- forward revenue + current-FY EPS (consistency gate: implied margin & growth must be sane) ---
-    # The revenue ("0y" row) and EPS (forward_eps_ntm, "0y" row) are a horizon-matched pair — both
-    # ~1 year forward of TTM — so the gate validates them together and feeds them to the driver as a
-    # coherent NTM consensus. They are accepted or rejected as a unit.
-    fr = raw.forward_revenue
-    ntm_eps = raw.forward_eps_ntm
-    if fr is not None:
+    # --- NTM consensus: blend FY0/FY1 by fiscal-year progress ---
+    # The `0y` row alone is only an NTM proxy early in a fiscal year; late in the FY it collapses toward
+    # TTM (understating consensus). The EPS blend stands on its own; the gate below guards only revenue.
+    w = _ntm_weight(raw.fy0_end, today or date.today())
+    ntm_eps = _blend_ntm(w, raw.eps_fy0, raw.eps_fy1)
+    ntm_rev = _blend_ntm(w, raw.rev_fy0, raw.rev_fy1)
+    attempted_ntm = any(v is not None for v in (raw.fy0_end, raw.eps_fy0, raw.eps_fy1, raw.rev_fy0, raw.rev_fy1))
+    if attempted_ntm and ntm_eps is None and ntm_rev is None:
+        rejected.append("NTM blend: unavailable (no fiscal-year-end or incomplete FY0/FY1 estimates)")
+    elif ntm_rev is None and (raw.rev_fy0 is not None or raw.rev_fy1 is not None):
+        rejected.append("forward_revenue: NTM blend unavailable (incomplete FY0/FY1 revenue estimates)")
+    if ntm_eps is not None:
+        snap.forward_eps_ntm = ntm_eps
+        snap.ntm_weight = w
+
+    # --- forward revenue (consistency gate on the BLENDED figures: implied margin & growth must be sane) ---
+    if ntm_rev is not None:
         idx = _index(fundamentals)
         annual = _annual_periods(idx)
         ttm = _ttm_or_fy(idx, "Revenues")
         shares_fact = _fact(idx, "WeightedAverageSharesDiluted", annual[0]) if annual else None
-        if ntm_eps and ntm_eps > 0 and ttm and ttm[0] > 0 and shares_fact and shares_fact.value > 0 and fr > 0:
-            m_c = ntm_eps * shares_fact.value / fr
-            g_c = fr / ttm[0] - 1
+        if ntm_eps and ntm_eps > 0 and ttm and ttm[0] > 0 and shares_fact and shares_fact.value > 0 and ntm_rev > 0:
+            m_c = ntm_eps * shares_fact.value / ntm_rev
+            g_c = ntm_rev / ttm[0] - 1
             lo, hi = REVENUE_GROWTH_BAND
             if 0 < m_c < REVENUE_MARGIN_CAP and lo <= g_c <= hi:
-                snap.forward_revenue = fr
-                snap.forward_eps_ntm = ntm_eps
+                snap.forward_revenue = ntm_rev
             else:
                 rejected.append(f"forward_revenue: rejected — implies margin {m_c:.0%} / growth {g_c:+.0%}")
         else:
-            rejected.append("forward_revenue: no baseline (shares/revenue/current-FY EPS) to validate")
+            rejected.append("forward_revenue: no baseline (shares/revenue/NTM EPS) to validate")
 
     # --- price targets ---
     tm, th, tl, na = raw.target_mean, raw.target_high, raw.target_low, raw.n_analysts
@@ -223,24 +262,22 @@ def fetch_consensus(ticker: str) -> RawConsensus:
                 raw.last_estimate_eps = float(row["epsEstimate"].iloc[0])
     except Exception as exc:  # noqa: BLE001 - surprise is optional
         logger.debug("consensus earnings_history unavailable for %s: %s", ticker, exc)
-    # Forward revenue + current-FY EPS estimates (best-effort; the analysis tables are flaky across
-    # yfinance versions). We read the "0y" (current fiscal year) rows so both figures sit ~1 year
-    # forward of TTM — matching the driver model's NTM bridge. (".info forwardEps" is the "+1y"/next-FY
-    # number; it stays as the forward-P/E anchor, a different horizon and a different purpose.)
+    # Estimates for BOTH fiscal years + the current FY's end date, so validate_consensus can blend them
+    # into a true next-twelve-months figure. Each source is independently best-effort.
     try:
         est = handle.revenue_estimate
-        if est is not None and "avg" in getattr(est, "columns", []) and "0y" in getattr(est, "index", []):
-            v = est.loc["0y", "avg"]
-            if v is not None and float(v) == float(v):   # reject NaN
-                raw.forward_revenue = float(v)
+        raw.rev_fy0, raw.rev_fy1 = _estimate_avg(est, "0y"), _estimate_avg(est, "+1y")
     except Exception as exc:  # noqa: BLE001 - revenue estimate is optional
         logger.debug("consensus revenue_estimate unavailable for %s: %s", ticker, exc)
     try:
         ee = handle.earnings_estimate
-        if ee is not None and "avg" in getattr(ee, "columns", []) and "0y" in getattr(ee, "index", []):
-            v = ee.loc["0y", "avg"]
-            if v is not None and float(v) == float(v):   # reject NaN
-                raw.forward_eps_ntm = float(v)
+        raw.eps_fy0, raw.eps_fy1 = _estimate_avg(ee, "0y"), _estimate_avg(ee, "+1y")
     except Exception as exc:  # noqa: BLE001 - earnings estimate is optional
         logger.debug("consensus earnings_estimate unavailable for %s: %s", ticker, exc)
+    try:
+        ts = info.get("nextFiscalYearEnd")
+        if ts:
+            raw.fy0_end = datetime.fromtimestamp(int(ts), UTC).date()
+    except Exception as exc:  # noqa: BLE001 - fiscal-year end is optional
+        logger.debug("consensus fiscal-year end unavailable for %s: %s", ticker, exc)
     return raw

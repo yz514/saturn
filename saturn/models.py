@@ -66,8 +66,9 @@ class ConsensusSnapshot(BaseModel):
     class: external estimate data, not as-reported and not a Saturn model output."""
 
     forward_eps: float | None = None
-    forward_eps_ntm: float | None = None  # current-FY (0y) EPS estimate — horizon-matched to forward_revenue
-    forward_revenue: float | None = None
+    forward_eps_ntm: float | None = None  # blended next-twelve-months EPS (w*FY0 + (1-w)*FY1)
+    ntm_weight: float | None = None       # w: FY0's share of the blend (fiscal-year progress)
+    forward_revenue: float | None = None  # blended next-twelve-months revenue (w*FY0 + (1-w)*FY1)
     forward_pe: float | None = None
     peg: float | None = None
     target_mean: float | None = None

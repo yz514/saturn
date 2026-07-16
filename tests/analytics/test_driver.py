@@ -35,8 +35,37 @@ def test_driver_bridge_math_no_consensus():
     assert dm.low_confidence is False
 
 
+def test_driver_no_consensus_comparison_without_ntm_eps():
+    # The FY+1 fallback is deliberately gone: without a horizon-correct NTM EPS we make NO comparison
+    # rather than silently comparing against a figure up to two years forward.
+    from saturn.models import ConsensusSnapshot, Provenance
+    cons = ConsensusSnapshot(forward_eps=4.0, provenance=Provenance(source="yfinance (estimate)"))
+    dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
+    assert dm.consensus_eps is None and dm.eps_gap is None
+    assert dm.gap_from_growth is None and dm.consensus_implied_growth is None
+
+
+def test_waterfall_legs_sum_to_eps_gap_saturn_below_consensus():
+    from saturn.models import ConsensusSnapshot, Provenance
+    cons = ConsensusSnapshot(forward_eps_ntm=2.5, forward_revenue=1100.0,
+                             provenance=Provenance(source="yfinance (estimate)"))
+    dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
+    assert dm.eps_gap < 0                                            # Saturn below consensus
+    assert abs((dm.gap_from_growth + dm.gap_from_margin) - dm.eps_gap) < 1e-6
+    assert dm.gap_from_growth < 0                                    # signs follow the gap direction
+
+
+def test_waterfall_legs_sum_to_eps_gap_saturn_above_consensus():
+    from saturn.models import ConsensusSnapshot, Provenance
+    cons = ConsensusSnapshot(forward_eps_ntm=0.5, forward_revenue=900.0,
+                             provenance=Provenance(source="yfinance (estimate)"))
+    dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
+    assert dm.eps_gap > 0                                            # Saturn above consensus
+    assert abs((dm.gap_from_growth + dm.gap_from_margin) - dm.eps_gap) < 1e-6
+
+
 def test_driver_consensus_decomposition_two_lenses():
-    cons = ConsensusSnapshot(forward_eps=2.5, provenance=Provenance(source="yfinance (estimate)"))
+    cons = ConsensusSnapshot(forward_eps_ntm=2.5, provenance=Provenance(source="yfinance (estimate)"))
     dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
     assert dm.consensus_eps == 2.5
     assert abs(dm.eps_gap - (dm.saturn_eps - 2.5)) < 1e-9
@@ -68,7 +97,7 @@ def test_driver_low_confidence_without_growth_history():
 def test_driver_low_confidence_extreme_implied_growth():
     # margin=0.1, shares=50, rev=1000 -> implied_g = (eps*50/0.1)/1000 - 1
     # forward_eps=4.0 -> implied_g = (4.0*50/0.1)/1000 - 1 = 2000/1000 - 1 = 1.0 (>0.60) -> low confidence
-    cons = ConsensusSnapshot(forward_eps=4.0, provenance=Provenance(source="yfinance (estimate)"))
+    cons = ConsensusSnapshot(forward_eps_ntm=4.0, provenance=Provenance(source="yfinance (estimate)"))
     dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
     assert dm is not None
     assert abs(dm.consensus_implied_growth - 1.0) < 1e-9
@@ -99,32 +128,20 @@ def test_driver_without_override_is_trend():
 
 def test_driver_waterfall_identity_and_values():
     from saturn.models import ConsensusSnapshot, Provenance
-    cons = ConsensusSnapshot(forward_eps=2.5, forward_revenue=1100.0,
+    cons = ConsensusSnapshot(forward_eps_ntm=2.5, forward_revenue=1100.0,
                              provenance=Provenance(source="yfinance (estimate)"))
     dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
     # consensus growth = 1100/1000 - 1 = 0.10; consensus margin = 2.5*50/1100
     assert abs(dm.consensus_growth - 0.10) < 1e-9
     assert abs(dm.consensus_margin - (2.5 * 50 / 1100)) < 1e-9
-    # 2-factor identity: growth effect + margin effect == consensus_eps - saturn_eps
-    assert abs((dm.gap_from_growth + dm.gap_from_margin) - (2.5 - dm.saturn_eps)) < 1e-6
+    # 2-factor identity: growth effect + margin effect == saturn_eps - consensus_eps
+    assert abs((dm.gap_from_growth + dm.gap_from_margin) - (dm.saturn_eps - 2.5)) < 1e-6
     assert dm.consensus_revenue == 1100.0
-
-
-def test_driver_prefers_ntm_eps_over_forward_eps():
-    # When the horizon-matched current-FY (NTM) EPS is present, the gap/waterfall use it, not the
-    # forward (FY+1) anchor EPS — so the comparison is like-for-like with Saturn's 1yr bridge.
-    from saturn.models import ConsensusSnapshot, Provenance
-    cons = ConsensusSnapshot(forward_eps=4.0, forward_eps_ntm=2.5, forward_revenue=1100.0,
-                             provenance=Provenance(source="yfinance (estimate)"))
-    dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
-    assert dm.consensus_eps == 2.5                                    # NTM, not the 4.0 anchor
-    assert abs(dm.consensus_margin - (2.5 * 50 / 1100)) < 1e-9        # margin uses NTM EPS
-    assert abs((dm.gap_from_growth + dm.gap_from_margin) - (2.5 - dm.saturn_eps)) < 1e-6
 
 
 def test_driver_no_waterfall_without_forward_revenue():
     from saturn.models import ConsensusSnapshot, Provenance
-    cons = ConsensusSnapshot(forward_eps=2.5, provenance=Provenance(source="yfinance (estimate)"))
+    cons = ConsensusSnapshot(forward_eps_ntm=2.5, provenance=Provenance(source="yfinance (estimate)"))
     dm = compute_driver_model(_facts(_base_rows()), _quote(), cons)
     assert dm.consensus_revenue is None and dm.gap_from_growth is None and dm.gap_from_margin is None
     assert dm.consensus_implied_growth is not None   # two-lens still present

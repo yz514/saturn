@@ -446,9 +446,9 @@ def test_align_corrects_divergent_rationale():
 
 
 def test_align_noop_within_tolerance():
-    t = _align_thesis(rationale="Our base case implies -40% vs the Street's +14%.", base_ret=-0.47)  # 7pp
+    t = _align_thesis(rationale="Our base case implies -46% vs the Street's +14%.", base_ret=-0.47)  # 1pp (rounding)
     align_prose_base_return(t)
-    assert "-40%" in t.rationale
+    assert "-46%" in t.rationale
 
 
 def test_align_noop_no_cue():
@@ -476,6 +476,42 @@ def test_align_positive_computed():
     t = _align_thesis(rationale="Our base case implies -5% vs the Street.", base_ret=0.12)
     align_prose_base_return(t)
     assert "+12%" in t.rationale
+
+
+def test_anchor_uses_ntm_pe_derived_from_the_same_ntm_eps():
+    # AMZN-like: price 254.96 / NTM EPS 9.32 = 27.4x. The anchor and the driver bridge now speak the
+    # SAME EPS, so "27.4x" and "$9.32" reconcile by construction.
+    from saturn.models import Quote
+    cons = ConsensusSnapshot(forward_eps=9.88, forward_pe=25.79, forward_eps_ntm=9.32, ntm_weight=0.46,
+                             provenance=Provenance(source="yfinance (estimate)"))
+    d = _dossier(consensus=cons, quote=Quote(price=254.96, provenance=Provenance(source="yfinance")))
+    a = _resolve_anchor(d)
+    assert a.metric == "NTM P/E" and abs(a.value - 27.4) < 0.1 and a.unit == "x"
+    assert "NTM P/E 27.4x" in a.text and "$9.32" in a.text
+    assert "46% current FY / 54% next FY" in a.text
+    assert "FY+1 P/E 25.8x" in a.text and "$9.88" in a.text      # conventional reference retained
+
+
+def test_anchor_falls_back_to_forward_pe_without_ntm_eps():
+    cons = ConsensusSnapshot(forward_pe=6.5, forward_eps=1.2, target_mean=180.0, rating="buy",
+                             n_analysts=30, provenance=Provenance(source="yfinance (estimate)"))
+    a = _resolve_anchor(_dossier(consensus=cons))
+    assert a.metric == "Forward P/E" and a.value == 6.5
+    # the no-NTM path must be byte-identical to pre-slice behaviour: legacy wording, no FY+1 relabel
+    assert "forward P/E 6.5x" in a.text
+    assert "FY+1 P/E" not in a.text and "NTM P/E" not in a.text
+
+
+def test_prose_tolerance_is_rounding_only():
+    from saturn.agents.synthesist import _PROSE_RETURN_TOL
+    assert _PROSE_RETURN_TOL == 0.02
+
+
+def test_align_corrects_ten_point_divergence():
+    # AMZN case: prose said +12% while the table computed +22% -> 10pp slipped the old 15pp tolerance
+    t = _align_thesis(rationale="Base case implies ~+12% vs the Street's +23%.", base_ret=0.22)
+    align_prose_base_return(t)
+    assert "+22%" in t.rationale and "+12%" not in t.rationale
 
 
 def test_build_thesis_wires_prose_alignment():
