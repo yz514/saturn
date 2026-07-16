@@ -493,10 +493,13 @@ def test_anchor_uses_ntm_pe_derived_from_the_same_ntm_eps():
 
 
 def test_anchor_falls_back_to_forward_pe_without_ntm_eps():
-    cons = ConsensusSnapshot(forward_pe=6.5, target_mean=180.0, rating="buy", n_analysts=30,
-                             provenance=Provenance(source="yfinance (estimate)"))
+    cons = ConsensusSnapshot(forward_pe=6.5, forward_eps=1.2, target_mean=180.0, rating="buy",
+                             n_analysts=30, provenance=Provenance(source="yfinance (estimate)"))
     a = _resolve_anchor(_dossier(consensus=cons))
     assert a.metric == "Forward P/E" and a.value == 6.5
+    # the no-NTM path must be byte-identical to pre-slice behaviour: legacy wording, no FY+1 relabel
+    assert "forward P/E 6.5x" in a.text
+    assert "FY+1 P/E" not in a.text and "NTM P/E" not in a.text
 
 
 def test_prose_tolerance_is_rounding_only():

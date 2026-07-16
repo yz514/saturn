@@ -52,11 +52,13 @@ def _resolve_anchor(dossier: CompanyDossier) -> ExpectationAnchor:
             blend = (f"; {cons.ntm_weight:.0%} current FY / {1 - cons.ntm_weight:.0%} next FY"
                      if cons.ntm_weight is not None else "")
             parts.append(f"NTM P/E {ntm_pe:.1f}x (on blended NTM EPS ${cons.forward_eps_ntm:.2f}{blend})")
-        if cons.forward_pe is not None:
-            ref = f" on FY+1 EPS ${cons.forward_eps:.2f}" if cons.forward_eps is not None else ""
-            parts.append(f"FY+1 P/E {cons.forward_pe:.1f}x{ref}")
-        elif cons.forward_eps is not None and ntm_pe is None:
-            parts.append(f"forward EPS ${cons.forward_eps:.2f}/share")
+            if cons.forward_pe is not None:
+                ref = f" on FY+1 EPS ${cons.forward_eps:.2f}" if cons.forward_eps is not None else ""
+                parts.append(f"FY+1 P/E {cons.forward_pe:.1f}x{ref}")
+        elif cons.forward_pe is not None:
+            parts.append(f"forward P/E {cons.forward_pe:.1f}x")            # legacy text, unchanged
+        elif cons.forward_eps is not None:
+            parts.append(f"forward EPS ${cons.forward_eps:.2f}/share")     # legacy text, unchanged
         if cons.target_mean is not None:
             up = f" ({cons.target_upside_pct:+.0%} vs price)" if cons.target_upside_pct is not None else ""
             parts.append(f"mean target ${cons.target_mean:,.0f}{up}")
