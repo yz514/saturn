@@ -282,3 +282,22 @@ def test_blend_ntm_none_when_any_input_missing():
     assert _blend_ntm(None, 8.66, 9.88) is None
     assert _blend_ntm(0.5, None, 9.88) is None
     assert _blend_ntm(0.5, 8.66, None) is None
+
+
+def test_partial_revenue_estimates_record_a_reason():
+    # EPS blends fine, but only ONE revenue year is present -> no NTM revenue. The drop must be
+    # explained, not silent (validate_consensus promises a reason for every rejection).
+    raw = RawConsensus(forward_eps=6.2, eps_fy0=5.0, eps_fy1=5.0,
+                       rev_fy0=100e9, fy0_end=_date(2026, 12, 31))     # rev_fy1 missing
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0), today=_date(2026, 7, 15))
+    assert c.forward_eps_ntm == 5.0            # EPS still blended (independent of revenue)
+    assert c.forward_revenue is None           # revenue dropped...
+    assert any("forward_revenue" in r for r in c.rejected)   # ...and the reason is recorded
+
+
+def test_no_double_note_when_whole_blend_unavailable():
+    # Nothing blendable at all -> exactly ONE note (the blanket one), not two.
+    raw = RawConsensus(forward_eps=6.2, eps_fy0=5.0, eps_fy1=6.0, rev_fy0=100e9)  # no fy0_end
+    c = validate_consensus(raw, _rev_fund(), _quote(50.0), today=_date(2026, 7, 15))
+    ntm_notes = [r for r in c.rejected if "NTM blend" in r or "forward_revenue" in r]
+    assert len(ntm_notes) == 1 and "NTM blend: unavailable" in ntm_notes[0]

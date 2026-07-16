@@ -168,6 +168,8 @@ def validate_consensus(
     attempted_ntm = any(v is not None for v in (raw.fy0_end, raw.eps_fy0, raw.eps_fy1, raw.rev_fy0, raw.rev_fy1))
     if attempted_ntm and ntm_eps is None and ntm_rev is None:
         rejected.append("NTM blend: unavailable (no fiscal-year-end or incomplete FY0/FY1 estimates)")
+    elif ntm_rev is None and (raw.rev_fy0 is not None or raw.rev_fy1 is not None):
+        rejected.append("forward_revenue: NTM blend unavailable (incomplete FY0/FY1 revenue estimates)")
     if ntm_eps is not None:
         snap.forward_eps_ntm = ntm_eps
         snap.ntm_weight = w
