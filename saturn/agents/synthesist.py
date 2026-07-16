@@ -22,7 +22,17 @@ _PROSE_MATH_LOOKAHEAD = 120   # chars after a cited pair in which to look for it
 _PROSE_PAIR_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*(?:EPS|FCF/share|sales/share)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:P/E|P/FCF|P/S|x)\b",
     re.IGNORECASE)
-_PROSE_PRICE_RE = re.compile(r"\$\s?(\d[\d,]*(?:\.\d+)?)")
+# A $ figure counts as the pair's claimed PRODUCT only when the prose explicitly presents it as
+# such via a cue word/symbol immediately before it ("implies/yields/gives … $X", "→/=/≈ $X",
+# optionally through a short "(an) implied price near/of $X" phrase). Taking the nearest $ instead
+# clobbered legitimately-sourced figures (a Street target, an RPO backlog, the spot price) that
+# merely sat near the pair. "for" is deliberately NOT a cue ("for $560" is ordinary English), and
+# thousands are grouped (\d{1,3}(?:,\d{3})*) so a sentence comma after a figure is not swallowed.
+_PROSE_PRICE_RE = re.compile(
+    r"(?:implies|implying|implied|yields|yielding|gives|giving|→|=|≈)\s*"
+    r"(?:(?:a|an)\s+)?(?:(?:\w+\s+)?price\s+(?:target\s+)?(?:of|near|at|around|to)\s+)?"
+    r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)",
+    re.IGNORECASE)
 
 
 def _derive_stance(base_return: float | None, target_upside: float | None) -> str | None:
@@ -199,8 +209,9 @@ def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["Co
                     f"{thesis.stance} stance")))
 
     # 5. Prose arithmetic — the LLM's own "A EPS × B P/E … $C" must actually multiply out. Verifying its
-    # stated math needs no whitelist: legitimately-sourced figures (spot, target, driver EPS, RPO) are
-    # never touched because they are not part of an asserted pair-and-price claim.
+    # stated math needs no whitelist: a $ figure is read as the pair's product $C only when a cue
+    # (implies/yields/gives/→/=/≈) presents it as one (see _PROSE_PRICE_RE), so legitimately-sourced
+    # figures (spot, target, driver EPS, RPO) that merely sit near the pair are left untouched.
     claims = _prose_math_claims(thesis.variant) + _prose_math_claims(thesis.rationale)
     for a, b, c, _s, _e in claims:
         if c is None:

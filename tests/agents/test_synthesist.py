@@ -670,3 +670,61 @@ def test_build_thesis_wires_scenario_math_alignment():
     t = _build_thesis(data, _resolve_anchor(d), d)
     assert "$461.25" in t.rationale and "$358" not in t.rationale
     assert not any(i.check == "prose_arithmetic" for i in t.coherence_issues)
+
+
+# --- Cue-anchored price: the corrector must NEVER rewrite a sourced $ that is not the pair's product.
+# Before the cue anchor, _PROSE_PRICE_RE grabbed the FIRST $ in the window, so a correctly-sourced
+# figure nearest the pair (a Street target, an RPO backlog, the spot price) was clobbered into a
+# fabricated product. Each case below is BYTE-FOR-BYTE preserved because no cue presents that $ as
+# the product; 20.5 x 22.5 = 461.25 and the pair's real claim ($461) is already within rounding.
+
+def test_align_leaves_street_target_untouched():
+    # The nearest $ is the Street's $560 target; the pair's real claim ($461) trails it after "implying".
+    text = "20.5 EPS × 22.5 P/E versus the Street's $560 target, implying $461."
+    t = _coh_thesis(_msft_legs(), rationale=text)
+    align_prose_scenario_math(t)
+    assert t.rationale == text                         # $560 NOT rewritten; $461 already correct
+
+
+def test_align_leaves_rpo_backlog_untouched():
+    text = "20.5 EPS × 22.5 P/E, well below the $633B RPO backlog we flagged, implying $461."
+    t = _coh_thesis(_msft_legs(), rationale=text)
+    align_prose_scenario_math(t)
+    assert t.rationale == text                         # $633B NOT rewritten into $461.25B
+
+
+def test_align_leaves_spot_price_and_comma_untouched():
+    # The only nearby $ is the spot $410 (no cue) -> price None -> no rewrite, and the sentence comma
+    # after "$410" must survive (the old [\d,]* swallowed it, mangling the clause).
+    text = "20.5 EPS × 22.5 P/E, shares currently trade at $410, well below fair value."
+    t = _coh_thesis(_msft_legs(), rationale=text)
+    align_prose_scenario_math(t)
+    assert t.rationale == text
+
+
+def test_prose_math_claims_price_none_when_only_nearby_dollar_is_non_cue():
+    # A pair whose only nearby $ is a non-cue figure yields price None: no arithmetic, no rewrite.
+    claims = _prose_math_claims("20.5 EPS × 22.5 P/E, shares currently trade at $410, cheap.")
+    assert len(claims) == 1 and claims[0][2] is None
+
+
+def test_align_still_corrects_a_genuine_cue_anchored_wrong_price():
+    # A cue ("gives") genuinely presents $999 as the product; 18.86 x 19 = 358.34 -> it IS corrected.
+    t = _coh_thesis(_msft_legs(), rationale="18.86 EPS × 19 P/E gives $999.")
+    align_prose_scenario_math(t)
+    assert "$358.34" in t.rationale and "$999" not in t.rationale
+
+
+def test_align_noop_on_correct_cue_anchored_price():
+    # 18.86 x 19 = 358.34; the cue-anchored $358 is within rounding -> untouched.
+    text = "18.86 EPS × 19 P/E gives $358."
+    t = _coh_thesis(_msft_legs(), rationale=text)
+    align_prose_scenario_math(t)
+    assert t.rationale == text
+
+
+def test_prose_arithmetic_not_flagged_on_sourced_dollar():
+    # The check shares the parser: a non-cue $410 must not be mistaken for a false product.
+    t = _coh_thesis(_msft_legs(),
+                    rationale="20.5 EPS × 22.5 P/E, shares currently trade at $410, well below.")
+    assert not any(i.check == "prose_arithmetic" for i in scenario_coherence(t, _dossier()))
