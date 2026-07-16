@@ -237,6 +237,24 @@ def align_prose_base_return(thesis: AlphaThesis) -> None:
     thesis.rationale = _fix(thesis.rationale)
 
 
+def align_prose_scenario_math(thesis: AlphaThesis) -> None:
+    """Correct a stated scenario price in the prose to the product of the LLM's OWN cited value and
+    multiple, in place. The LLM keeps its assumptions; code owns the multiplication — so a corrected
+    claim lands on the table's price. Uses the same parser/tolerance as the prose_arithmetic check.
+    No-ops when there is no cited pair, no claimed price, or the arithmetic is already right."""
+    def _fix(text: str) -> str:
+        for a, b, c, s, e in _prose_math_claims(text):
+            if c is None:
+                continue
+            product = a * b
+            if product > 0 and abs(product - c) / product > _PROSE_MATH_TOL:
+                return text[:s] + f"{product:,.2f}" + text[e:]      # first bad claim; span excludes "$"
+        return text
+
+    thesis.variant = _fix(thesis.variant)
+    thesis.rationale = _fix(thesis.rationale)
+
+
 def apply_alpha_corrections(alpha: AlphaThesis, corrections: dict) -> AlphaThesis:
     """Splice corrected prose fields into the alpha thesis and recompute completeness. Only
     ALPHA_PROSE_FIELDS are updated; stance/stance_basis/anchor/scenarios are carried over verbatim
@@ -342,6 +360,7 @@ def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier
         provenance=Provenance(source="Saturn (synthesist)"),
     )
     align_prose_base_return(thesis)
+    align_prose_scenario_math(thesis)
     thesis.incompleteness = alpha_completeness(thesis)
     thesis.coherence_issues = scenario_coherence(thesis, dossier)
     return thesis

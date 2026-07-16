@@ -589,3 +589,53 @@ def test_coherence_issue_accepts_the_two_new_checks():
     from saturn.models import CoherenceIssue
     for name in ("prose_arithmetic", "prose_scenario_not_in_table"):
         assert CoherenceIssue(check=name, severity="medium", detail="d").check == name
+
+
+from saturn.agents.synthesist import align_prose_scenario_math
+
+
+def test_align_prose_scenario_math_corrects_the_price():
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E, an implied price near $358.")
+    align_prose_scenario_math(t)
+    assert "$461.25" in t.rationale and "$358" not in t.rationale
+    assert not any(i.check == "prose_arithmetic" for i in scenario_coherence(t, _dossier()))
+
+
+def test_align_prose_scenario_math_noop_when_correct():
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E → $461.")
+    align_prose_scenario_math(t)
+    assert "$461." in t.rationale
+
+
+def test_align_prose_scenario_math_noop_without_a_pair():
+    t = _coh_thesis(_msft_legs(), rationale="The base case is cautious.")
+    align_prose_scenario_math(t)
+    assert t.rationale == "The base case is cautious."
+
+
+def test_align_prose_scenario_math_corrects_the_variant_field_too():
+    t = _coh_thesis(_msft_legs(), rationale="")
+    t.variant = "Base 20.5 EPS × 22.5 P/E implies $358."
+    align_prose_scenario_math(t)
+    assert "$461.25" in t.variant
+
+
+def test_build_thesis_wires_scenario_math_alignment():
+    # guards that align_prose_scenario_math is actually CALLED in _build_thesis — the unit tests above
+    # would still pass if the call were deleted.
+    from saturn.agents.synthesist import _build_thesis, _resolve_anchor
+    from saturn.models import Quote
+    d = _dossier(quote=Quote(price=400.0, provenance=Provenance(source="yfinance")))
+    data = {"stance": "unclear", "variant": "v",
+            "rationale": "base: 20.5 EPS × 22.5 P/E, an implied price near $358.",
+            "confidence": "low", "key_variable": "k", "falsifier": "f", "horizon": "12m",
+            "scenarios": [
+                {"name": "bull", "period": "FY", "driver": "d", "metric": "EPS",
+                 "metric_basis": "adjusted", "per_share_value": 22.0, "multiple": 24.0, "multiple_basis": "P/E"},
+                {"name": "base", "period": "FY", "driver": "d", "metric": "EPS",
+                 "metric_basis": "adjusted", "per_share_value": 20.5, "multiple": 22.5, "multiple_basis": "P/E"},
+                {"name": "bear", "period": "FY", "driver": "d", "metric": "EPS",
+                 "metric_basis": "adjusted", "per_share_value": 18.5, "multiple": 19.0, "multiple_basis": "P/E"}]}
+    t = _build_thesis(data, _resolve_anchor(d), d)
+    assert "$461.25" in t.rationale and "$358" not in t.rationale
+    assert not any(i.check == "prose_arithmetic" for i in t.coherence_issues)
