@@ -1,7 +1,9 @@
 # tests/agents/test_synthesist.py
 from datetime import date
 
-from saturn.agents.synthesist import _resolve_anchor, _price_scenarios, alpha_completeness, _coherence_score
+from saturn.agents.synthesist import (
+    _resolve_anchor, _price_scenarios, alpha_completeness, _coherence_score, _prose_math_claims,
+)
 from saturn.models import (
     AlphaThesis, CompanyDossier, ConsensusSnapshot, DerivedMetric, ExpectationAnchor,
     Provenance, Quote, ScenarioLeg, CoherenceIssue,
@@ -534,3 +536,195 @@ def test_build_thesis_wires_prose_alignment():
     assert "+6%" not in t.rationale                      # corrected inside _build_thesis
     assert "-50%" in t.rationale
     assert not any(i.check == "prose_vs_computed" for i in t.coherence_issues)
+
+
+def test_prose_math_claims_parses_pair_and_price():
+    text = "base FY2027E: 20.5 EPS × 22.5 P/E, yielding an implied price near $358."
+    claims = _prose_math_claims(text)
+    assert len(claims) == 1
+    a, b, price, start, end = claims[0]
+    assert a == 20.5 and b == 22.5 and price == 358.0
+    assert text[start:end] == "358"          # span covers the NUMBER only, not the "$"
+
+
+def test_prose_math_claims_accepts_ascii_x_and_commas():
+    claims = _prose_math_claims("20.5 EPS x 22.5 P/E gives $1,461.25 per share")
+    assert len(claims) == 1 and claims[0][:3] == (20.5, 22.5, 1461.25)
+
+
+def test_prose_math_claims_price_none_when_too_far():
+    text = "20.5 EPS × 22.5 P/E" + " filler" * 40 + " $358"      # >120 chars away
+    claims = _prose_math_claims(text)
+    assert len(claims) == 1 and claims[0][2] is None
+
+
+def test_prose_math_claims_empty_without_a_pair():
+    assert _prose_math_claims("The base case is cautious; the stock trades at $395.63.") == []
+
+
+def _msft_legs():
+    # prices monotonic; bull above spot; the (value, multiple) pairs are the table's truth
+    return [_priced_leg("bull", 528.00, 0.33, value=22.0, mult=24.0),
+            _priced_leg("base", 461.25, 0.17, value=20.5, mult=22.5),
+            _priced_leg("bear", 351.50, -0.11, value=18.5, mult=19.0)]
+
+
+def test_prose_arithmetic_flags_false_math():
+    # 20.5 x 22.5 = 461.25, but the prose claims $358 -> the LLM's own arithmetic is false
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E, an implied price near $358.")
+    assert [i.check for i in scenario_coherence(t, _dossier())] == ["prose_arithmetic"]
+
+
+def test_prose_arithmetic_passes_when_correct():
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E, an implied price near $461.")
+    assert scenario_coherence(t, _dossier()) == []      # 461 vs 461.25 is rounding
+
+
+def test_prose_arithmetic_skips_pair_without_a_price():
+    t = _coh_thesis(_msft_legs(), rationale="our base rests on 20.5 EPS × 22.5 P/E across the cycle.")
+    assert scenario_coherence(t, _dossier()) == []
+
+
+def test_coherence_issue_accepts_the_two_new_checks():
+    from saturn.models import CoherenceIssue
+    for name in ("prose_arithmetic", "prose_scenario_not_in_table"):
+        assert CoherenceIssue(check=name, severity="medium", detail="d").check == name
+
+
+from saturn.agents.synthesist import align_prose_scenario_math
+
+
+def test_align_prose_scenario_math_corrects_the_price():
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E, an implied price near $358.")
+    align_prose_scenario_math(t)
+    assert "$461.25" in t.rationale and "$358" not in t.rationale
+    assert not any(i.check == "prose_arithmetic" for i in scenario_coherence(t, _dossier()))
+
+
+def test_align_prose_scenario_math_noop_when_correct():
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E → $461.")
+    align_prose_scenario_math(t)
+    assert "$461." in t.rationale
+
+
+def test_prose_scenario_not_in_table_flags_an_orphan_pair():
+    # The real MSFT sin: 18.86 x 19 = 358.34 ~= $358, so the ARITHMETIC IS TRUE -- but 18.86x19 is not
+    # a leg in the table. This is the check that catches a smuggled second base case.
+    t = _coh_thesis(_msft_legs(), rationale="an alternative read: 18.86 EPS × 19x = $358.")
+    checks = [i.check for i in scenario_coherence(t, _dossier())]
+    assert "prose_scenario_not_in_table" in checks
+    assert "prose_arithmetic" not in checks          # the math itself is correct
+
+
+def test_prose_scenario_not_in_table_tolerance_is_one_percent():
+    # REGRESSION GUARD: 18.86 sits 1.95% from the bear leg's 18.5. At a 2% tolerance it would be
+    # matched to bear and escape. It must NOT be.
+    t = _coh_thesis(_msft_legs(), rationale="an alternative read: 18.86 EPS × 19x = $358.")
+    issue = next(i for i in scenario_coherence(t, _dossier()) if i.check == "prose_scenario_not_in_table")
+    assert "18.86" in issue.detail
+
+
+def test_prose_scenario_in_the_table_passes():
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E → $461.")
+    assert scenario_coherence(t, _dossier()) == []
+
+
+def test_prose_scenario_tolerates_rounding_of_a_real_leg():
+    legs = [_priced_leg("bull", 528.00, 0.33, value=22.0, mult=24.0),
+            _priced_leg("base", 461.25, 0.17, value=20.5, mult=22.5),
+            _priced_leg("bear", 358.34, -0.10, value=18.86, mult=19.0)]
+    # prose rounds 18.86 -> 18.9 (0.21% off) and 18.9*19 = 359.1 vs the stated $359 (0.03%)
+    t = _coh_thesis(legs, rationale="bear: 18.9 EPS × 19x → $359.")
+    assert scenario_coherence(t, _dossier()) == []
+
+
+def test_align_prose_scenario_math_noop_without_a_pair():
+    t = _coh_thesis(_msft_legs(), rationale="The base case is cautious.")
+    align_prose_scenario_math(t)
+    assert t.rationale == "The base case is cautious."
+
+
+def test_align_prose_scenario_math_corrects_the_variant_field_too():
+    t = _coh_thesis(_msft_legs(), rationale="")
+    t.variant = "Base 20.5 EPS × 22.5 P/E implies $358."
+    align_prose_scenario_math(t)
+    assert "$461.25" in t.variant
+
+
+def test_build_thesis_wires_scenario_math_alignment():
+    # guards that align_prose_scenario_math is actually CALLED in _build_thesis — the unit tests above
+    # would still pass if the call were deleted.
+    from saturn.agents.synthesist import _build_thesis, _resolve_anchor
+    from saturn.models import Quote
+    d = _dossier(quote=Quote(price=400.0, provenance=Provenance(source="yfinance")))
+    data = {"stance": "unclear", "variant": "v",
+            "rationale": "base: 20.5 EPS × 22.5 P/E, an implied price near $358.",
+            "confidence": "low", "key_variable": "k", "falsifier": "f", "horizon": "12m",
+            "scenarios": [
+                {"name": "bull", "period": "FY", "driver": "d", "metric": "EPS",
+                 "metric_basis": "adjusted", "per_share_value": 22.0, "multiple": 24.0, "multiple_basis": "P/E"},
+                {"name": "base", "period": "FY", "driver": "d", "metric": "EPS",
+                 "metric_basis": "adjusted", "per_share_value": 20.5, "multiple": 22.5, "multiple_basis": "P/E"},
+                {"name": "bear", "period": "FY", "driver": "d", "metric": "EPS",
+                 "metric_basis": "adjusted", "per_share_value": 18.5, "multiple": 19.0, "multiple_basis": "P/E"}]}
+    t = _build_thesis(data, _resolve_anchor(d), d)
+    assert "$461.25" in t.rationale and "$358" not in t.rationale
+    assert not any(i.check == "prose_arithmetic" for i in t.coherence_issues)
+
+
+# --- Cue-anchored price: the corrector must NEVER rewrite a sourced $ that is not the pair's product.
+# Before the cue anchor, _PROSE_PRICE_RE grabbed the FIRST $ in the window, so a correctly-sourced
+# figure nearest the pair (a Street target, an RPO backlog, the spot price) was clobbered into a
+# fabricated product. Each case below is BYTE-FOR-BYTE preserved because no cue presents that $ as
+# the product; 20.5 x 22.5 = 461.25 and the pair's real claim ($461) is already within rounding.
+
+def test_align_leaves_street_target_untouched():
+    # The nearest $ is the Street's $560 target; the pair's real claim ($461) trails it after "implying".
+    text = "20.5 EPS × 22.5 P/E versus the Street's $560 target, implying $461."
+    t = _coh_thesis(_msft_legs(), rationale=text)
+    align_prose_scenario_math(t)
+    assert t.rationale == text                         # $560 NOT rewritten; $461 already correct
+
+
+def test_align_leaves_rpo_backlog_untouched():
+    text = "20.5 EPS × 22.5 P/E, well below the $633B RPO backlog we flagged, implying $461."
+    t = _coh_thesis(_msft_legs(), rationale=text)
+    align_prose_scenario_math(t)
+    assert t.rationale == text                         # $633B NOT rewritten into $461.25B
+
+
+def test_align_leaves_spot_price_and_comma_untouched():
+    # The only nearby $ is the spot $410 (no cue) -> price None -> no rewrite, and the sentence comma
+    # after "$410" must survive (the old [\d,]* swallowed it, mangling the clause).
+    text = "20.5 EPS × 22.5 P/E, shares currently trade at $410, well below fair value."
+    t = _coh_thesis(_msft_legs(), rationale=text)
+    align_prose_scenario_math(t)
+    assert t.rationale == text
+
+
+def test_prose_math_claims_price_none_when_only_nearby_dollar_is_non_cue():
+    # A pair whose only nearby $ is a non-cue figure yields price None: no arithmetic, no rewrite.
+    claims = _prose_math_claims("20.5 EPS × 22.5 P/E, shares currently trade at $410, cheap.")
+    assert len(claims) == 1 and claims[0][2] is None
+
+
+def test_align_still_corrects_a_genuine_cue_anchored_wrong_price():
+    # A cue ("gives") genuinely presents $999 as the product; 18.86 x 19 = 358.34 -> it IS corrected.
+    t = _coh_thesis(_msft_legs(), rationale="18.86 EPS × 19 P/E gives $999.")
+    align_prose_scenario_math(t)
+    assert "$358.34" in t.rationale and "$999" not in t.rationale
+
+
+def test_align_noop_on_correct_cue_anchored_price():
+    # 18.86 x 19 = 358.34; the cue-anchored $358 is within rounding -> untouched.
+    text = "18.86 EPS × 19 P/E gives $358."
+    t = _coh_thesis(_msft_legs(), rationale=text)
+    align_prose_scenario_math(t)
+    assert t.rationale == text
+
+
+def test_prose_arithmetic_not_flagged_on_sourced_dollar():
+    # The check shares the parser: a non-cue $410 must not be mistaken for a false product.
+    t = _coh_thesis(_msft_legs(),
+                    rationale="20.5 EPS × 22.5 P/E, shares currently trade at $410, well below.")
+    assert not any(i.check == "prose_arithmetic" for i in scenario_coherence(t, _dossier()))

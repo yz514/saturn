@@ -14,6 +14,25 @@ _COHERENCE_MULTIPLE_TOL = 0.15   # a leg multiple within ±15% of consensus forw
 _COHERENCE_EPS_FLOOR = 0.8       # ... applied to an EPS below 80% of consensus forward EPS is horizon-mismatched
 _PROSE_RETURN_TOL = 0.02         # prose base return may differ from the computed base return only by rounding
 _PROSE_RETURN_RE = re.compile(r"base case implies[^%]*?([+-]?\d+(?:\.\d+)?)\s*%", re.IGNORECASE)
+_PROSE_MATH_TOL = 0.02        # a stated A*B may differ from the true product only by rounding
+_PROSE_LEG_TOL = 0.01         # a cited (value, multiple) must match a table leg this closely.
+                              # NOT 2%: the real smuggled pair 18.86x19 sits 1.95% from a bear leg of
+                              # 18.5x19, so a 2% tolerance would match it and defeat the check.
+_PROSE_MATH_LOOKAHEAD = 120   # chars after a cited pair in which to look for its claimed price
+_PROSE_PAIR_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:EPS|FCF/share|sales/share)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:P/E|P/FCF|P/S|x)\b",
+    re.IGNORECASE)
+# A $ figure counts as the pair's claimed PRODUCT only when the prose explicitly presents it as
+# such via a cue word/symbol immediately before it ("implies/yields/gives … $X", "→/=/≈ $X",
+# optionally through a short "(an) implied price near/of $X" phrase). Taking the nearest $ instead
+# clobbered legitimately-sourced figures (a Street target, an RPO backlog, the spot price) that
+# merely sat near the pair. "for" is deliberately NOT a cue ("for $560" is ordinary English), and
+# thousands are grouped (\d{1,3}(?:,\d{3})*) so a sentence comma after a figure is not swallowed.
+_PROSE_PRICE_RE = re.compile(
+    r"(?:implies|implying|implied|yields|yielding|gives|giving|→|=|≈)\s*"
+    r"(?:(?:a|an)\s+)?(?:(?:\w+\s+)?price\s+(?:target\s+)?(?:of|near|at|around|to)\s+)?"
+    r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)",
+    re.IGNORECASE)
 
 
 def _derive_stance(base_return: float | None, target_upside: float | None) -> str | None:
@@ -120,6 +139,23 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
     return gaps
 
 
+def _prose_math_claims(text: str) -> list[tuple[float, float, float | None, int, int]]:
+    """Every 'A EPS × B P/E' pair the prose asserts, each with the price it claims (when one follows
+    within _PROSE_MATH_LOOKAHEAD chars) and that price NUMBER's span. Shared by the prose_arithmetic
+    check and align_prose_scenario_math so they cannot drift apart. Pure; [] when there is no pair."""
+    out: list[tuple[float, float, float | None, int, int]] = []
+    for m in _PROSE_PAIR_RE.finditer(text):
+        a, b = float(m.group(1)), float(m.group(2))
+        window = text[m.end(): m.end() + _PROSE_MATH_LOOKAHEAD]
+        pm = _PROSE_PRICE_RE.search(window)
+        if pm:
+            out.append((a, b, float(pm.group(1).replace(",", "")),
+                        m.end() + pm.start(1), m.end() + pm.end(1)))
+        else:
+            out.append((a, b, None, -1, -1))
+    return out
+
+
 def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["CoherenceIssue"]:
     """Deterministic coherence audit of the priced scenario table (sibling to alpha_completeness).
     Returns issues in a stable order: monotonicity, prose_vs_computed, multiple_horizon,
@@ -172,6 +208,35 @@ def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["Co
             detail=(f"bull scenario returns {bull.implied_return_pct:+.0%} (below spot) despite a "
                     f"{thesis.stance} stance")))
 
+    # 5. Prose arithmetic — the LLM's own "A EPS × B P/E … $C" must actually multiply out. Verifying its
+    # stated math needs no whitelist: a $ figure is read as the pair's product $C only when a cue
+    # (implies/yields/gives/→/=/≈) presents it as one (see _PROSE_PRICE_RE), so legitimately-sourced
+    # figures (spot, target, driver EPS, RPO) that merely sit near the pair are left untouched.
+    claims = _prose_math_claims(thesis.variant) + _prose_math_claims(thesis.rationale)
+    for a, b, c, _s, _e in claims:
+        if c is None:
+            continue
+        product = a * b
+        if product > 0 and abs(product - c) / product > _PROSE_MATH_TOL:
+            issues.append(CoherenceIssue(
+                check="prose_arithmetic", severity="medium",
+                detail=(f"prose states {a:g} × {b:g} ≈ ${c:,.2f}, but the product is ${product:,.2f}")))
+            break   # one arithmetic issue per thesis is enough
+
+    # 6. Prose scenario not in the table — a cited (value, multiple) must be one the table actually
+    # prices. Catches arithmetic that is TRUE but describes a scenario we never modelled (a smuggled
+    # second base case). Tolerance is deliberately tight (_PROSE_LEG_TOL): a looser 2% would match a
+    # near-miss like 18.86x19 to a real 18.5x19 leg and let it through.
+    legs_vm = [(s.per_share_value, s.multiple) for s in thesis.scenarios]
+    for a, b, _c, _s, _e in claims:
+        if not any(v > 0 and m > 0
+                   and abs(v - a) / v <= _PROSE_LEG_TOL and abs(m - b) / m <= _PROSE_LEG_TOL
+                   for v, m in legs_vm):
+            issues.append(CoherenceIssue(
+                check="prose_scenario_not_in_table", severity="medium",
+                detail=f"prose cites {a:g} × {b:g}, which is not a scenario in the table"))
+            break   # one orphan report per thesis is enough
+
     return issues
 
 
@@ -191,6 +256,24 @@ def align_prose_base_return(thesis: AlphaThesis) -> None:
         if m and abs(float(m.group(1)) / 100.0 - base.implied_return_pct) > _PROSE_RETURN_TOL:
             return _PROSE_RETURN_RE.sub(lambda mm: mm.group(0).replace(mm.group(1), computed, 1),
                                         text, count=1)
+        return text
+
+    thesis.variant = _fix(thesis.variant)
+    thesis.rationale = _fix(thesis.rationale)
+
+
+def align_prose_scenario_math(thesis: AlphaThesis) -> None:
+    """Correct a stated scenario price in the prose to the product of the LLM's OWN cited value and
+    multiple, in place. The LLM keeps its assumptions; code owns the multiplication — so a corrected
+    claim lands on the table's price. Uses the same parser/tolerance as the prose_arithmetic check.
+    No-ops when there is no cited pair, no claimed price, or the arithmetic is already right."""
+    def _fix(text: str) -> str:
+        for a, b, c, s, e in _prose_math_claims(text):
+            if c is None:
+                continue
+            product = a * b
+            if product > 0 and abs(product - c) / product > _PROSE_MATH_TOL:
+                return text[:s] + f"{product:,.2f}" + text[e:]      # first bad claim; span excludes "$"
         return text
 
     thesis.variant = _fix(thesis.variant)
@@ -302,6 +385,7 @@ def _build_thesis(data: dict, anchor: ExpectationAnchor, dossier: CompanyDossier
         provenance=Provenance(source="Saturn (synthesist)"),
     )
     align_prose_base_return(thesis)
+    align_prose_scenario_math(thesis)
     thesis.incompleteness = alpha_completeness(thesis)
     thesis.coherence_issues = scenario_coherence(thesis, dossier)
     return thesis

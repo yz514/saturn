@@ -167,7 +167,8 @@ class ScenarioLeg(BaseModel):
 
 class CoherenceIssue(BaseModel):
     """A deterministic scenario-table coherence problem (computed, never LLM-authored)."""
-    check: Literal["monotonicity", "prose_vs_computed", "multiple_horizon", "bull_below_spot"]
+    check: Literal["monotonicity", "prose_vs_computed", "multiple_horizon", "bull_below_spot",
+                   "prose_arithmetic", "prose_scenario_not_in_table"]
     severity: Literal["high", "medium"]
     detail: str
 

@@ -15,8 +15,8 @@ from saturn.agents.critic import (
 )
 from saturn.agents.guidance import extract_guidance
 from saturn.agents.synthesist import (
-    _coherence_score, align_prose_base_return, apply_alpha_corrections, resynthesize_coherent,
-    scenario_coherence, synthesize,
+    _coherence_score, align_prose_base_return, align_prose_scenario_math, apply_alpha_corrections,
+    resynthesize_coherent, scenario_coherence, synthesize,
 )
 from saturn.analytics.driver import compute_driver_model
 from saturn.llm.base import LLMClient
@@ -447,6 +447,7 @@ def run(
     # monotonicity/multiple_horizon are stable; only prose_vs_computed can change here.
     if alpha is not None:
         align_prose_base_return(alpha)          # re-correct any base return the prose-repair rewrote
+        align_prose_scenario_math(alpha)     # re-correct any scenario math the prose-repair rewrote
         alpha.coherence_issues = scenario_coherence(alpha, company)
 
     return ResearchReport(
