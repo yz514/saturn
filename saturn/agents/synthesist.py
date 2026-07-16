@@ -198,6 +198,20 @@ def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["Co
             detail=(f"bull scenario returns {bull.implied_return_pct:+.0%} (below spot) despite a "
                     f"{thesis.stance} stance")))
 
+    # 5. Prose arithmetic — the LLM's own "A EPS × B P/E … $C" must actually multiply out. Verifying its
+    # stated math needs no whitelist: legitimately-sourced figures (spot, target, driver EPS, RPO) are
+    # never touched because they are not part of an asserted pair-and-price claim.
+    claims = _prose_math_claims(thesis.variant) + _prose_math_claims(thesis.rationale)
+    for a, b, c, _s, _e in claims:
+        if c is None:
+            continue
+        product = a * b
+        if product > 0 and abs(product - c) / product > _PROSE_MATH_TOL:
+            issues.append(CoherenceIssue(
+                check="prose_arithmetic", severity="medium",
+                detail=(f"prose states {a:g} × {b:g} ≈ ${c:,.2f}, but the product is ${product:,.2f}")))
+            break   # one arithmetic issue per thesis is enough
+
     return issues
 
 

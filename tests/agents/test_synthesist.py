@@ -562,6 +562,29 @@ def test_prose_math_claims_empty_without_a_pair():
     assert _prose_math_claims("The base case is cautious; the stock trades at $395.63.") == []
 
 
+def _msft_legs():
+    # prices monotonic; bull above spot; the (value, multiple) pairs are the table's truth
+    return [_priced_leg("bull", 528.00, 0.33, value=22.0, mult=24.0),
+            _priced_leg("base", 461.25, 0.17, value=20.5, mult=22.5),
+            _priced_leg("bear", 351.50, -0.11, value=18.5, mult=19.0)]
+
+
+def test_prose_arithmetic_flags_false_math():
+    # 20.5 x 22.5 = 461.25, but the prose claims $358 -> the LLM's own arithmetic is false
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E, an implied price near $358.")
+    assert [i.check for i in scenario_coherence(t, _dossier())] == ["prose_arithmetic"]
+
+
+def test_prose_arithmetic_passes_when_correct():
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E, an implied price near $461.")
+    assert scenario_coherence(t, _dossier()) == []      # 461 vs 461.25 is rounding
+
+
+def test_prose_arithmetic_skips_pair_without_a_price():
+    t = _coh_thesis(_msft_legs(), rationale="our base rests on 20.5 EPS × 22.5 P/E across the cycle.")
+    assert scenario_coherence(t, _dossier()) == []
+
+
 def test_coherence_issue_accepts_the_two_new_checks():
     from saturn.models import CoherenceIssue
     for name in ("prose_arithmetic", "prose_scenario_not_in_table"):
