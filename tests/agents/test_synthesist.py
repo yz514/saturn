@@ -607,6 +607,37 @@ def test_align_prose_scenario_math_noop_when_correct():
     assert "$461." in t.rationale
 
 
+def test_prose_scenario_not_in_table_flags_an_orphan_pair():
+    # The real MSFT sin: 18.86 x 19 = 358.34 ~= $358, so the ARITHMETIC IS TRUE -- but 18.86x19 is not
+    # a leg in the table. This is the check that catches a smuggled second base case.
+    t = _coh_thesis(_msft_legs(), rationale="an alternative read: 18.86 EPS × 19x = $358.")
+    checks = [i.check for i in scenario_coherence(t, _dossier())]
+    assert "prose_scenario_not_in_table" in checks
+    assert "prose_arithmetic" not in checks          # the math itself is correct
+
+
+def test_prose_scenario_not_in_table_tolerance_is_one_percent():
+    # REGRESSION GUARD: 18.86 sits 1.95% from the bear leg's 18.5. At a 2% tolerance it would be
+    # matched to bear and escape. It must NOT be.
+    t = _coh_thesis(_msft_legs(), rationale="an alternative read: 18.86 EPS × 19x = $358.")
+    issue = next(i for i in scenario_coherence(t, _dossier()) if i.check == "prose_scenario_not_in_table")
+    assert "18.86" in issue.detail
+
+
+def test_prose_scenario_in_the_table_passes():
+    t = _coh_thesis(_msft_legs(), rationale="base: 20.5 EPS × 22.5 P/E → $461.")
+    assert scenario_coherence(t, _dossier()) == []
+
+
+def test_prose_scenario_tolerates_rounding_of_a_real_leg():
+    legs = [_priced_leg("bull", 528.00, 0.33, value=22.0, mult=24.0),
+            _priced_leg("base", 461.25, 0.17, value=20.5, mult=22.5),
+            _priced_leg("bear", 358.34, -0.10, value=18.86, mult=19.0)]
+    # prose rounds 18.86 -> 18.9 (0.21% off) and 18.9*19 = 359.1 vs the stated $359 (0.03%)
+    t = _coh_thesis(legs, rationale="bear: 18.9 EPS × 19x → $359.")
+    assert scenario_coherence(t, _dossier()) == []
+
+
 def test_align_prose_scenario_math_noop_without_a_pair():
     t = _coh_thesis(_msft_legs(), rationale="The base case is cautious.")
     align_prose_scenario_math(t)

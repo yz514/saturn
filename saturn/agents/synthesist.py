@@ -212,6 +212,20 @@ def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["Co
                 detail=(f"prose states {a:g} × {b:g} ≈ ${c:,.2f}, but the product is ${product:,.2f}")))
             break   # one arithmetic issue per thesis is enough
 
+    # 6. Prose scenario not in the table — a cited (value, multiple) must be one the table actually
+    # prices. Catches arithmetic that is TRUE but describes a scenario we never modelled (a smuggled
+    # second base case). Tolerance is deliberately tight (_PROSE_LEG_TOL): a looser 2% would match a
+    # near-miss like 18.86x19 to a real 18.5x19 leg and let it through.
+    legs_vm = [(s.per_share_value, s.multiple) for s in thesis.scenarios]
+    for a, b, _c, _s, _e in claims:
+        if not any(v > 0 and m > 0
+                   and abs(v - a) / v <= _PROSE_LEG_TOL and abs(m - b) / m <= _PROSE_LEG_TOL
+                   for v, m in legs_vm):
+            issues.append(CoherenceIssue(
+                check="prose_scenario_not_in_table", severity="medium",
+                detail=f"prose cites {a:g} × {b:g}, which is not a scenario in the table"))
+            break   # one orphan report per thesis is enough
+
     return issues
 
 
