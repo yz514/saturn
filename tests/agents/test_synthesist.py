@@ -1,7 +1,9 @@
 # tests/agents/test_synthesist.py
 from datetime import date
 
-from saturn.agents.synthesist import _resolve_anchor, _price_scenarios, alpha_completeness, _coherence_score
+from saturn.agents.synthesist import (
+    _resolve_anchor, _price_scenarios, alpha_completeness, _coherence_score, _prose_math_claims,
+)
 from saturn.models import (
     AlphaThesis, CompanyDossier, ConsensusSnapshot, DerivedMetric, ExpectationAnchor,
     Provenance, Quote, ScenarioLeg, CoherenceIssue,
@@ -534,3 +536,33 @@ def test_build_thesis_wires_prose_alignment():
     assert "+6%" not in t.rationale                      # corrected inside _build_thesis
     assert "-50%" in t.rationale
     assert not any(i.check == "prose_vs_computed" for i in t.coherence_issues)
+
+
+def test_prose_math_claims_parses_pair_and_price():
+    text = "base FY2027E: 20.5 EPS × 22.5 P/E, yielding an implied price near $358."
+    claims = _prose_math_claims(text)
+    assert len(claims) == 1
+    a, b, price, start, end = claims[0]
+    assert a == 20.5 and b == 22.5 and price == 358.0
+    assert text[start:end] == "358"          # span covers the NUMBER only, not the "$"
+
+
+def test_prose_math_claims_accepts_ascii_x_and_commas():
+    claims = _prose_math_claims("20.5 EPS x 22.5 P/E gives $1,461.25 per share")
+    assert len(claims) == 1 and claims[0][:3] == (20.5, 22.5, 1461.25)
+
+
+def test_prose_math_claims_price_none_when_too_far():
+    text = "20.5 EPS × 22.5 P/E" + " filler" * 40 + " $358"      # >120 chars away
+    claims = _prose_math_claims(text)
+    assert len(claims) == 1 and claims[0][2] is None
+
+
+def test_prose_math_claims_empty_without_a_pair():
+    assert _prose_math_claims("The base case is cautious; the stock trades at $395.63.") == []
+
+
+def test_coherence_issue_accepts_the_two_new_checks():
+    from saturn.models import CoherenceIssue
+    for name in ("prose_arithmetic", "prose_scenario_not_in_table"):
+        assert CoherenceIssue(check=name, severity="medium", detail="d").check == name

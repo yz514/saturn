@@ -14,6 +14,15 @@ _COHERENCE_MULTIPLE_TOL = 0.15   # a leg multiple within ±15% of consensus forw
 _COHERENCE_EPS_FLOOR = 0.8       # ... applied to an EPS below 80% of consensus forward EPS is horizon-mismatched
 _PROSE_RETURN_TOL = 0.02         # prose base return may differ from the computed base return only by rounding
 _PROSE_RETURN_RE = re.compile(r"base case implies[^%]*?([+-]?\d+(?:\.\d+)?)\s*%", re.IGNORECASE)
+_PROSE_MATH_TOL = 0.02        # a stated A*B may differ from the true product only by rounding
+_PROSE_LEG_TOL = 0.01         # a cited (value, multiple) must match a table leg this closely.
+                              # NOT 2%: the real smuggled pair 18.86x19 sits 1.95% from a bear leg of
+                              # 18.5x19, so a 2% tolerance would match it and defeat the check.
+_PROSE_MATH_LOOKAHEAD = 120   # chars after a cited pair in which to look for its claimed price
+_PROSE_PAIR_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:EPS|FCF/share|sales/share)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:P/E|P/FCF|P/S|x)\b",
+    re.IGNORECASE)
+_PROSE_PRICE_RE = re.compile(r"\$\s?(\d[\d,]*(?:\.\d+)?)")
 
 
 def _derive_stance(base_return: float | None, target_upside: float | None) -> str | None:
@@ -118,6 +127,23 @@ def alpha_completeness(thesis: AlphaThesis) -> list[str]:
         if not s.period.strip():
             gaps.append(f"scenario '{s.name}' missing period")
     return gaps
+
+
+def _prose_math_claims(text: str) -> list[tuple[float, float, float | None, int, int]]:
+    """Every 'A EPS × B P/E' pair the prose asserts, each with the price it claims (when one follows
+    within _PROSE_MATH_LOOKAHEAD chars) and that price NUMBER's span. Shared by the prose_arithmetic
+    check and align_prose_scenario_math so they cannot drift apart. Pure; [] when there is no pair."""
+    out: list[tuple[float, float, float | None, int, int]] = []
+    for m in _PROSE_PAIR_RE.finditer(text):
+        a, b = float(m.group(1)), float(m.group(2))
+        window = text[m.end(): m.end() + _PROSE_MATH_LOOKAHEAD]
+        pm = _PROSE_PRICE_RE.search(window)
+        if pm:
+            out.append((a, b, float(pm.group(1).replace(",", "")),
+                        m.end() + pm.start(1), m.end() + pm.end(1)))
+        else:
+            out.append((a, b, None, -1, -1))
+    return out
 
 
 def scenario_coherence(thesis: AlphaThesis, dossier: CompanyDossier) -> list["CoherenceIssue"]:
