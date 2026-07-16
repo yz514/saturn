@@ -294,3 +294,27 @@ def test_mock_dossier_has_driver_model():
     d = _mock_dossier("NVDA")
     assert d.driver_model is not None
     assert d.driver_model.saturn_eps is not None
+
+
+def test_build_dossier_records_an_edgar_gap_instead_of_going_silent():
+    # The ASML case: EDGAR raises -> route_to_source must turn it into a RECORDED gap, not a crash and
+    # not silence. Guards the SourceGap contract.
+    from saturn.ingestion.errors import DataUnavailable
+    from saturn.models import Provenance, Quote
+
+    def _edgar_boom(ticker):
+        raise DataUnavailable("0 usable facts from 24 XBRL rows (forms seen: 20-F); "
+                              "Saturn reads 10-K/10-Q only")
+
+    d = build_dossier(
+        "ASML", mock=False,
+        quote_fn=lambda t, *, mock: Quote(price=1.0, currency="USD", provenance=Provenance(source="yfinance")),
+        edgar_fn=_edgar_boom,
+        fred_fn=None,
+    )
+    # edgar_fn raised, so no fundamentals dict was ever produced to unpack (mirrors
+    # test_build_dossier_real_path_quote_only_records_gaps, where edgar_fn=None also
+    # leaves d.fundamentals None) -- the point of this test is that the failure is
+    # RECORDED as a gap rather than silently producing an empty-but-present dossier.
+    assert d.fundamentals is None
+    assert any(g.source == "edgar" and "20-F" in g.reason for g in d.gaps)

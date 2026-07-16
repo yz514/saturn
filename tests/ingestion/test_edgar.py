@@ -57,10 +57,16 @@ def test_max_years_limits_history():
     assert [x.fiscal_period for x in revs] == ["FY2024"]
 
 
-def test_parse_empty_payload_returns_no_facts():
+def test_parse_empty_payload_raises_data_unavailable():
+    # Superseded by the honest-gap fix: an empty companyfacts payload yields zero
+    # facts, which is no longer silent success (see test_parse_companyfacts_raises_*).
+    import pytest
     from saturn.ingestion.edgar import _parse_companyfacts as parse
-    assert parse({}).facts == []
-    assert parse({"facts": {}}).facts == []
+    from saturn.ingestion.errors import DataUnavailable
+    with pytest.raises(DataUnavailable):
+        parse({})
+    with pytest.raises(DataUnavailable):
+        parse({"facts": {}})
 
 
 def test_fetch_edgar_assembles_dossier_dict(monkeypatch):
@@ -199,6 +205,9 @@ def test_quarterly_ytd_only_flow_is_dropped_not_mislabeled():
     payload = {
         "cik": 1045810,
         "facts": {"us-gaap": {"NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+            # an annual figure also exists, so the fixture isn't all-dropped (this test targets
+            # the quarterly YTD-drop behavior specifically, not overall emptiness)
+            {"start": "2024-06-01", "end": "2025-05-31", "val": 500, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-07-15"},
             # only a YTD (6-month) duration exists for this quarter
             {"start": "2024-12-01", "end": "2025-05-31", "val": 250, "fy": 2025, "fp": "Q2", "form": "10-Q", "filed": "2025-06-20"},
         ]}}}},
@@ -420,6 +429,64 @@ def test_fetch_edgar_appends_segment_section(monkeypatch):
     seg = next((s for s in sections if s.name == "Business Unit / Segment Results (earnings release)"), None)
     assert seg is not None and "Cloud Memory" in seg.excerpt
     assert seg.provenance.source_url.endswith("ex991-press.htm")
+
+
+def test_survey_forms_counts_rows_and_distinct_forms():
+    from saturn.ingestion.edgar import _survey_forms
+    blob = {"facts": {"us-gaap": {
+        "Revenues": {"units": {"EUR": [{"form": "20-F"}, {"form": "20-F"}]}},
+        "NetIncomeLoss": {"units": {"EUR": [{"form": "20-F/A"}, {"form": "20-F"}]}}}}}
+    n, forms = _survey_forms(blob)
+    assert n == 4 and forms == ["20-F", "20-F/A"]
+
+
+def test_survey_forms_empty_without_us_gaap():
+    from saturn.ingestion.edgar import _survey_forms
+    assert _survey_forms({"facts": {"dei": {}}}) == (0, [])
+    assert _survey_forms({}) == (0, [])
+
+
+def test_parse_companyfacts_raises_for_a_foreign_private_issuer():
+    # ASML-like: every row is a 20-F, so the 10-K/10-Q filters drop everything.
+    import pytest
+    from saturn.ingestion.errors import DataUnavailable
+    blob = {"facts": {"us-gaap": {"Revenues": {"units": {"EUR": [
+        {"form": "20-F", "fp": "FY", "start": "2025-01-01", "end": "2025-12-31",
+         "val": 32667300000, "filed": "2026-02-11", "accn": "x"}]}}}}}
+    with pytest.raises(DataUnavailable) as exc:
+        _parse_companyfacts(blob)
+    msg = str(exc.value)
+    assert "20-F" in msg and "10-K/10-Q" in msg      # the reason must explain WHY
+
+
+def test_parse_companyfacts_reason_names_the_real_cause_when_forms_are_domestic():
+    # 10-Q rows ARE present, but every quarterly row is a YTD-cumulative duration and gets dropped.
+    # The reason must NOT claim "Saturn reads 10-K/10-Q only" -- these ARE 10-K/10-Q.
+    import pytest
+    from saturn.ingestion.errors import DataUnavailable
+    payload = {"facts": {"us-gaap": {"NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+        {"start": "2024-12-01", "end": "2025-05-31", "val": 250, "fy": 2025, "fp": "Q2",
+         "form": "10-Q", "filed": "2025-06-20"},
+    ]}}}}}
+    with pytest.raises(DataUnavailable) as exc:
+        _parse_companyfacts(payload)
+    msg = str(exc.value)
+    assert "10-Q" in msg                       # it still reports what it saw
+    assert "reads 10-K/10-Q only" not in msg   # ...but does NOT misdiagnose it as a form mismatch
+    assert "concepts" in msg or "period" in msg
+
+
+def test_parse_companyfacts_raises_without_any_xbrl_facts():
+    import pytest
+    from saturn.ingestion.errors import DataUnavailable
+    with pytest.raises(DataUnavailable, match="no XBRL facts"):
+        _parse_companyfacts({"facts": {}})
+
+
+def test_parse_companyfacts_still_parses_a_normal_us_filer():
+    # REGRESSION GUARD: this change sits in the path every US ticker depends on.
+    f = _parse_companyfacts(_companyfacts())
+    assert f.facts        # the real NVDA fixture must still yield facts and NOT raise
 
 
 def test_fetch_edgar_no_segment_section_when_no_exhibit(monkeypatch):
